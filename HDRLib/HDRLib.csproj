@@ -1,0 +1,44 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <Configurations>Debug;Release</Configurations>
+
+    <PackageId>HDRLib</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Stanislav Popov</Authors>
+    <Company>Stanislav Popov</Company>
+    <Description>A high-performance C# library for creating and processing High Dynamic Range (HDR) images with CPU, SIMD, and GPU acceleration.</Description>
+    <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>hdr;tone-mapping;image-processing;alignment;debevec;gpu;ilgpu;simd;avx</PackageTags>
+    <PackageProjectUrl>https://github.com/stas-pavlov/HDRLib</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/stas-pavlov/HDRLib</RepositoryUrl>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Debevec\**" />
+    <EmbeddedResource Remove="Debevec\**" />
+    <None Remove="Debevec\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ILGPU" Version="1.5.3" />
+    <PackageReference Include="ILGPU.Algorithms" Version="1.5.3" />
+    <PackageReference Include="MetadataExtractor" Version="2.8.1" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\LICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

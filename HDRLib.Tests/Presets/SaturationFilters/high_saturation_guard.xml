@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SaturationColorFilter xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>High saturation guard</Name>
+  <Description>Pulls back already saturated colors to keep global saturation increases natural.</Description>
+  <Enabled>false</Enabled>
+  <SaturationAdjustment>-28</SaturationAdjustment>
+  <Ranges>
+    <SaturationColorRange>
+      <HueMin>0</HueMin>
+      <HueMax>360</HueMax>
+      <SaturationMin>0.72</SaturationMin>
+      <SaturationMax>1</SaturationMax>
+      <ValueMin>0.10</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>-28</SaturationMultiplier>
+    </SaturationColorRange>
+  </Ranges>
+</SaturationColorFilter>

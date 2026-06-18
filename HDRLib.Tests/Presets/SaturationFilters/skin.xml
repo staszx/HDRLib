@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SaturationColorFilter xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>Skin</Name>
+  <Description>Softly reduces saturation in common skin-tone ranges.</Description>
+  <Enabled>false</Enabled>
+  <SaturationAdjustment>-30</SaturationAdjustment>
+  <Ranges>
+    <SaturationColorRange>
+      <HueMin>0</HueMin>
+      <HueMax>50</HueMax>
+      <SaturationMin>0.12</SaturationMin>
+      <SaturationMax>0.85</SaturationMax>
+      <ValueMin>0.20</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>-30</SaturationMultiplier>
+    </SaturationColorRange>
+    <SaturationColorRange>
+      <HueMin>355</HueMin>
+      <HueMax>18</HueMax>
+      <SaturationMin>0.10</SaturationMin>
+      <SaturationMax>0.70</SaturationMax>
+      <ValueMin>0.25</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>-30</SaturationMultiplier>
+    </SaturationColorRange>
+    <SaturationColorRange>
+      <HueMin>18</HueMin>
+      <HueMax>38</HueMax>
+      <SaturationMin>0.08</SaturationMin>
+      <SaturationMax>0.65</SaturationMax>
+      <ValueMin>0.18</ValueMin>
+      <ValueMax>0.95</ValueMax>
+      <SaturationMultiplier>-30</SaturationMultiplier>
+    </SaturationColorRange>
+  </Ranges>
+</SaturationColorFilter>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SaturationColorFilter xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>Green control</Name>
+  <Description>Softens strong foliage greens while leaving weak greens mostly alone.</Description>
+  <Enabled>false</Enabled>
+  <SaturationAdjustment>-22</SaturationAdjustment>
+  <Ranges>
+    <SaturationColorRange>
+      <HueMin>75</HueMin>
+      <HueMax>155</HueMax>
+      <SaturationMin>0.35</SaturationMin>
+      <SaturationMax>1</SaturationMax>
+      <ValueMin>0.12</ValueMin>
+      <ValueMax>0.95</ValueMax>
+      <SaturationMultiplier>-22</SaturationMultiplier>
+    </SaturationColorRange>
+  </Ranges>
+</SaturationColorFilter>

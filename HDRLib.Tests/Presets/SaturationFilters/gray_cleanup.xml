@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SaturationColorFilter xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>Gray cleanup</Name>
+  <Description>Reduces color noise in almost-neutral gray areas.</Description>
+  <Enabled>false</Enabled>
+  <SaturationAdjustment>-55</SaturationAdjustment>
+  <Ranges>
+    <SaturationColorRange>
+      <HueMin>0</HueMin>
+      <HueMax>360</HueMax>
+      <SaturationMin>0</SaturationMin>
+      <SaturationMax>0.16</SaturationMax>
+      <ValueMin>0.04</ValueMin>
+      <ValueMax>0.96</ValueMax>
+      <SaturationMultiplier>-55</SaturationMultiplier>
+    </SaturationColorRange>
+  </Ranges>
+</SaturationColorFilter>

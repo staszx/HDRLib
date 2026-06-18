@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SaturationColorFilter xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>Yellow tones</Name>
+  <Description>Reduces saturation in yellow hues.</Description>
+  <Enabled>false</Enabled>
+  <SaturationAdjustment>-18</SaturationAdjustment>
+  <Ranges>
+    <SaturationColorRange>
+      <HueMin>45</HueMin>
+      <HueMax>75</HueMax>
+      <SaturationMin>0.18</SaturationMin>
+      <SaturationMax>1</SaturationMax>
+      <ValueMin>0.08</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>-18</SaturationMultiplier>
+    </SaturationColorRange>
+  </Ranges>
+</SaturationColorFilter>

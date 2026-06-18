@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ToneMapperSerializationModel xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Settings xsi:type="NaturalToneMapperSettings">
+    <AutoAdjustType>None</AutoAdjustType>
+    <ExposureEV>0</ExposureEV>
+    <Brightness>1</Brightness>
+    <Contrast>1</Contrast>
+    <LocalContrast>0</LocalContrast>
+    <LocalContrastRadius>1</LocalContrastRadius>
+    <Transparent>0</Transparent>
+    <Saturation>0</Saturation>
+    <SaturateExcludes />
+    <SkinFilter>
+      <Enabled>false</Enabled>
+      <SaturationAdjustment>-30</SaturationAdjustment>
+      <Ranges>
+        <SaturationColorRange>
+          <HueMin>0</HueMin>
+          <HueMax>50</HueMax>
+          <SaturationMin>0.12</SaturationMin>
+          <SaturationMax>0.85</SaturationMax>
+          <ValueMin>0.2</ValueMin>
+          <ValueMax>1</ValueMax>
+          <SaturationMultiplier>-30</SaturationMultiplier>
+        </SaturationColorRange>
+      </Ranges>
+    </SkinFilter>
+    <GrayColorFilter>
+      <Enabled>true</Enabled>
+      <SaturationAdjustment>-55</SaturationAdjustment>
+      <Ranges>
+        <SaturationColorRange>
+          <HueMin>0</HueMin>
+          <HueMax>360</HueMax>
+          <SaturationMin>0</SaturationMin>
+          <SaturationMax>0.18</SaturationMax>
+          <ValueMin>0.05</ValueMin>
+          <ValueMax>0.95</ValueMax>
+          <SaturationMultiplier>-55</SaturationMultiplier>
+        </SaturationColorRange>
+      </Ranges>
+    </GrayColorFilter>
+    <Gamma>1</Gamma>
+    <ColorTemperature>6500</ColorTemperature>
+    <WhiteBalanceReferenceType>None</WhiteBalanceReferenceType>
+    <WhiteBalanceReferenceColor>
+      <Red>1</Red>
+      <Green>1</Green>
+      <Blue>1</Blue>
+    </WhiteBalanceReferenceColor>
+    <TargetGray>0.18</TargetGray>
+    <ShadowsBoost>1</ShadowsBoost>
+    <MidtonesBoost>1</MidtonesBoost>
+    <HighlightsBoost>1</HighlightsBoost>
+    <WhitePointPercentile>1</WhitePointPercentile>
+    <OutputMidGray>0.18</OutputMidGray>
+    <AutoBrightnessCompensation>false</AutoBrightnessCompensation>
+    <BypassToneCompressionForLdr>true</BypassToneCompressionForLdr>
+    <LdrBypassWhitePointThreshold>3.4028235E+38</LdrBypassWhitePointThreshold>
+    <TonalRangeCompression>1</TonalRangeCompression>
+  </Settings>
+</ToneMapperSerializationModel>

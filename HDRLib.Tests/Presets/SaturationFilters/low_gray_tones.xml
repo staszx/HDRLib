@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SaturationColorFilter xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>Low gray tones</Name>
+  <Description>Gently boosts near-gray colors; the farther from gray, the stronger the boost.</Description>
+  <Enabled>false</Enabled>
+  <SaturationAdjustment>12</SaturationAdjustment>
+  <Ranges>
+    <SaturationColorRange>
+      <HueMin>0</HueMin>
+      <HueMax>360</HueMax>
+      <SaturationMin>0</SaturationMin>
+      <SaturationMax>0.08</SaturationMax>
+      <ValueMin>0.03</ValueMin>
+      <ValueMax>0.92</ValueMax>
+      <SaturationMultiplier>4</SaturationMultiplier>
+    </SaturationColorRange>
+    <SaturationColorRange>
+      <HueMin>0</HueMin>
+      <HueMax>360</HueMax>
+      <SaturationMin>0.08</SaturationMin>
+      <SaturationMax>0.18</SaturationMax>
+      <ValueMin>0.03</ValueMin>
+      <ValueMax>0.92</ValueMax>
+      <SaturationMultiplier>10</SaturationMultiplier>
+    </SaturationColorRange>
+    <SaturationColorRange>
+      <HueMin>0</HueMin>
+      <HueMax>360</HueMax>
+      <SaturationMin>0.18</SaturationMin>
+      <SaturationMax>0.32</SaturationMax>
+      <ValueMin>0.03</ValueMin>
+      <ValueMax>0.92</ValueMax>
+      <SaturationMultiplier>18</SaturationMultiplier>
+    </SaturationColorRange>
+  </Ranges>
+</SaturationColorFilter>

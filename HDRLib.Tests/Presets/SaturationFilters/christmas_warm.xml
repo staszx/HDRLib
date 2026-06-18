@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SaturationColorFilter xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>Christmas warm</Name>
+  <Description>Boosts warm red, orange, and golden-yellow hues.</Description>
+  <Enabled>false</Enabled>
+  <SaturationAdjustment>22</SaturationAdjustment>
+  <Ranges>
+    <SaturationColorRange>
+      <HueMin>348</HueMin>
+      <HueMax>18</HueMax>
+      <SaturationMin>0.18</SaturationMin>
+      <SaturationMax>1</SaturationMax>
+      <ValueMin>0.08</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>22</SaturationMultiplier>
+    </SaturationColorRange>
+    <SaturationColorRange>
+      <HueMin>18</HueMin>
+      <HueMax>35</HueMax>
+      <SaturationMin>0.18</SaturationMin>
+      <SaturationMax>1</SaturationMax>
+      <ValueMin>0.10</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>22</SaturationMultiplier>
+    </SaturationColorRange>
+    <SaturationColorRange>
+      <HueMin>38</HueMin>
+      <HueMax>62</HueMax>
+      <SaturationMin>0.15</SaturationMin>
+      <SaturationMax>0.95</SaturationMax>
+      <ValueMin>0.16</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>22</SaturationMultiplier>
+    </SaturationColorRange>
+  </Ranges>
+</SaturationColorFilter>
