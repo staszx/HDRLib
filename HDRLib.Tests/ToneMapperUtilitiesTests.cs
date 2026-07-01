@@ -38,4 +38,31 @@ public class ToneMapperUtilitiesTests
 
         Assert.That(ToneMapperUtilities.ComputeAutoExposure(pixels, AcesConstants.ExposureDelta, AcesConstants.ExposureEpsilon), Is.EqualTo(expected).Within(1e-6f));
     }
+
+    [Test]
+    public void ComputeInputScale_KeepsLdrSingleImageRange()
+    {
+        var pixels = new[]
+        {
+            new Rgb(0.25f, 0.25f, 0.25f),
+            new Rgb(1f, 0.9f, 0.8f)
+        };
+
+        Assert.That(ToneMapperUtilities.ComputeInputScale(pixels), Is.EqualTo(1f).Within(1e-6f));
+    }
+
+    [Test]
+    public void ComputeInputScale_AlignsHdrRadianceByLogAverage()
+    {
+        var pixels = new[]
+        {
+            new Rgb(2f, 2f, 2f),
+            new Rgb(8f, 8f, 8f)
+        };
+
+        var expectedLogAverage = MathF.Exp((MathF.Log(2f) + MathF.Log(8f)) / 2f);
+        var expected = 0.18f / expectedLogAverage;
+
+        Assert.That(ToneMapperUtilities.ComputeInputScale(pixels), Is.EqualTo(expected).Within(1e-6f));
+    }
 }

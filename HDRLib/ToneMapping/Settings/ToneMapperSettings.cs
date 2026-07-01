@@ -3,6 +3,7 @@
 namespace HDRLib.ToneMapping.Settings;
 
 using HDRLib.Image;
+using HDRLib.PostProcessors;
 using HDRLib.ToneMapping;
 using System.Xml.Serialization;
 
@@ -23,9 +24,9 @@ public abstract class ToneMapperSettings
     private static readonly XmlSerializer Serializer = new(typeof(ToneMapperSettingsSerializationModel), KnownTypes);
 
     /// <summary>
-/// Gets or sets the automatic adjustment mode.
+/// Gets or sets whether automatic adjustment is enabled.
 /// </summary>
-public AutoAdjustType AutoAdjustType { get; set; } = AutoAdjustType.None;
+public bool AutoAdjustEnabled { get; set; }
     /// <summary>
 /// Gets or sets the exposure value (EV).
 /// </summary>
@@ -106,6 +107,10 @@ public WhiteBalanceReferenceType WhiteBalanceReferenceType { get; set; } = White
 /// Gets or sets the reference color for white‑balance calculations.
 /// </summary>
 public Rgb WhiteBalanceReferenceColor { get; set; } = new(1f, 1f, 1f);
+    /// <summary>
+/// Gets or sets final LAB post-processing adjustments.
+/// </summary>
+public PostProcessSettings PostProcess { get; set; } = new();
 
     /// <summary>
 /// Serialises the settings to the provided stream as XML.

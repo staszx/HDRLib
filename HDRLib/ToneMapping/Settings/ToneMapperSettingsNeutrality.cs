@@ -8,7 +8,7 @@ public static class ToneMapperSettingsNeutrality
 
     public static bool IsNeutral(this ToneMapperSettings settings)
     {
-        if (settings.AutoAdjustType != AutoAdjustType.None ||
+        if (settings.AutoAdjustEnabled ||
             MathF.Abs(settings.ExposureEV) > Epsilon ||
             MathF.Abs(settings.Brightness - 1f) > Epsilon ||
             MathF.Abs(settings.Contrast - 1f) > Epsilon ||
@@ -21,7 +21,8 @@ public static class ToneMapperSettingsNeutrality
             settings.GetSaturationColorRanges().Length != 0 ||
             MathF.Abs(settings.Gamma - 1f) > Epsilon ||
             !IsNeutralColorTemperature(settings.ColorTemperature) ||
-            settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
+            settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None ||
+            !settings.PostProcess.IsNeutral(Epsilon))
         {
             return false;
         }
@@ -40,7 +41,7 @@ public static class ToneMapperSettingsNeutrality
     public static T MakeNeutral<T>(this T settings)
         where T : ToneMapperSettings
     {
-        settings.AutoAdjustType = AutoAdjustType.None;
+        settings.AutoAdjustEnabled = false;
         settings.ExposureEV = 0f;
         settings.Brightness = 1f;
         settings.Contrast = 1f;
@@ -59,6 +60,7 @@ public static class ToneMapperSettingsNeutrality
         settings.Gamma = 1f;
         settings.ColorTemperature = 6500f;
         settings.WhiteBalanceReferenceType = WhiteBalanceReferenceType.None;
+        settings.PostProcess = new();
 
         switch (settings)
         {

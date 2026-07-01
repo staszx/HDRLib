@@ -26,7 +26,9 @@ protected ToneMapper(ToneMapperSettings settings)
     /// <summary>
 /// Gets the tone‑mapper configuration settings.
 /// </summary>
-protected ToneMapperSettings Settings { get; }
+    protected ToneMapperSettings Settings { get; }
+
+    protected Rgb[]? SourcePixelsBeforeProcessing { get; private set; }
 
     public void ApplyInPlace(Image<Rgb> image)
     {
@@ -40,16 +42,20 @@ protected ToneMapperSettings Settings { get; }
             return;
         }
 
+        this.SourcePixelsBeforeProcessing = this.PreservesSourceBeforeProcessing
+            ? (Rgb[])image.Pixels.Clone()
+            : null;
+
+        if (this.NormalizesInputRange)
+        {
+            ToneMapperUtilities.NormalizeInputRange(image.Pixels);
+        }
+
         var originalPixels = CreateBlendSource(image.Pixels, this.Settings.Transparent);
 
         if (this.Settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
         {
             this.whiteBalancer.ApplyInPlace(image, this.Settings.WhiteBalanceReferenceType, this.Settings.WhiteBalanceReferenceColor);
-        }
-
-        if (this.Settings.AutoAdjustType == AutoAdjustType.Advanced)
-        {
-            this.ApplyAdvancedAutoAdjust(image);
         }
 
         var effectiveSettings = this.BuildEffectiveSettings(image);
@@ -58,7 +64,9 @@ protected ToneMapperSettings Settings { get; }
         DehazeProcessor.ApplyInPlace(image, this.Settings.Dehaze);
         LocalContrastProcessor.ApplyInPlace(image, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
         this.ApplyColorTemperature(image);
+        this.ApplyPostProcess(image);
         ApplyBlending(image.Pixels, originalPixels, this.Settings.Transparent);
+        this.SourcePixelsBeforeProcessing = null;
     }
 
     public void Save(Stream stream)
@@ -87,6 +95,10 @@ protected ToneMapperSettings Settings { get; }
 /// <param name="image">Target image.</param>
 /// <param name="effectiveSettings">Computed settings derived from user configuration and auto‑adjust.</param>
 protected abstract void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettings effectiveSettings);
+
+    protected virtual bool NormalizesInputRange => true;
+
+    protected virtual bool PreservesSourceBeforeProcessing => false;
 
     /// <summary>
 /// Helper that prepares SIMD buffers, invokes the core processing delegate, and writes results back to the image.
@@ -130,15 +142,6 @@ protected void ApplyUsingSimd(Image<Rgb> image, Action<Vector256<float>[][], int
         var effectiveSaturation = SaturationToMultiplier(this.Settings.Saturation);
         var effectiveGamma = this.Settings.Gamma;
 
-        if (this.Settings.AutoAdjustType == AutoAdjustType.Simple)
-        {
-            var auto = ImageAnalyzer.Analyze(image.Pixels);
-            effectiveExposureEv += auto.ExposureEV;
-            effectiveBrightness *= auto.Brightness;
-            effectiveContrast *= auto.Contrast;
-            effectiveSaturation *= auto.Saturation;
-        }
-
         return new EffectiveToneMapperSettings(
             effectiveExposureEv,
             effectiveBrightness,
@@ -162,21 +165,21 @@ protected static float SaturationToMultiplier(float saturation)
             : 1f + (value / 50f);
     }
 
-    private void ApplyAdvancedAutoAdjust(Image<Rgb> image)
+    private void ApplyPostProcess(Image<Rgb> image)
     {
-        var auto = ImageAnalyzer.Analyze(image.Pixels);
-        var settings = new PostProcessSettings
+        var postProcessSettings = this.Settings.PostProcess;
+        if (this.Settings.AutoAdjustEnabled)
         {
-            Exposure = auto.ExposureEV,
-            Brightness = (float)auto.Brightness,
-            Shadows = 1.25f,
-            Midtones = 1.1f,
-            Highlights = (float)auto.HighlightCompression,
-            Contrast = (float)auto.Contrast,
-            Vibrance = (float)auto.Saturation
-        };
+            var auto = ImageAnalyzer.Analyze(image.Pixels);
+            postProcessSettings = postProcessSettings.WithAutoAdjust(auto);
+        }
 
-        var labProcessor = new LabPostProcessor(settings);
+        if (postProcessSettings.IsNeutral())
+        {
+            return;
+        }
+
+        var labProcessor = new LabPostProcessor(postProcessSettings);
         labProcessor.ApplyInPlace(image);
     }
 

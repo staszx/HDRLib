@@ -272,20 +272,13 @@ namespace HDRLib.Hdr
         
         public unsafe void Normalize(HDRLib.HdrImageOptions options)
         {
-            var averageBrightness = this.CalculateAverageBrightness();
-            var scale = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f);
-            var k = Vector256.Create(scale);
-
-            Parallel.For(0, Const.ChannelCount, ch =>
+            if (this.toneMapperSettings is null || this.toneMapperSettings.IsNeutral())
             {
-                fixed (Vector256<float>* pxls = this.Pixels[ch])
-                {
-                    for (var i = 0; i < this.vectorLength; ++i)
-                    {
-                        pxls[i] *= k;
-                    }
-                }
-            });
+                var averageBrightness = this.CalculateAverageBrightness();
+                var scale = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f) * 255f;
+                this.Multiply(scale);
+                return;
+            }
 
             if (this.toneMapperSettings is not null)
             {
@@ -301,6 +294,21 @@ namespace HDRLib.Hdr
                     for (var i = 0; i < this.vectorLength; ++i)
                     {
                         pxls[i] *= 255f;
+                    }
+                }
+            });
+        }
+
+        private unsafe void Multiply(float scale)
+        {
+            var scaleVector = Vector256.Create(scale);
+            Parallel.For(0, Const.ChannelCount, ch =>
+            {
+                fixed (Vector256<float>* pxls = this.Pixels[ch])
+                {
+                    for (var i = 0; i < this.vectorLength; ++i)
+                    {
+                        pxls[i] *= scaleVector;
                     }
                 }
             });

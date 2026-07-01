@@ -27,6 +27,8 @@ internal sealed class AcesFilmicToneMapperGpu : ToneMapperGpu
         this.gammaKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float>(ApplyGammaKernel);
     }
 
+    protected override bool NormalizesInputRange => false;
+
     protected override void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, EffectiveToneMapperSettings effectiveSettings)
     {
         var exposureAuto = this.Exposure(gpuPixels);

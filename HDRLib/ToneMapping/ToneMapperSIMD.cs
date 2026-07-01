@@ -4,6 +4,7 @@ namespace HDRLib.ToneMapping;
 
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
+using Post;
 using Settings;
 
 internal abstract class ToneMapperSIMD
@@ -17,6 +18,11 @@ internal abstract class ToneMapperSIMD
 
     public void ApplyInPlace(Vector256<float>[][] pixels, int width, int height)
     {
+        if (this.NormalizesInputRange)
+        {
+            NormalizeInputRange(pixels, width * height);
+        }
+
         this.ApplyCoreInPlace(pixels, width, height);
         if (!this.AppliesToneBoostInternally)
         {
@@ -24,6 +30,7 @@ internal abstract class ToneMapperSIMD
         }
 
         DehazeProcessorSIMD.ApplyInPlace(pixels, this.Settings.Dehaze);
+        this.ApplyPostProcessInPlace(pixels);
     }
 
     internal void ApplyCoreOnlyInPlace(Vector256<float>[][] pixels, int width, int height)
@@ -33,7 +40,27 @@ internal abstract class ToneMapperSIMD
 
     protected virtual bool AppliesToneBoostInternally => false;
 
+    protected virtual bool NormalizesInputRange => true;
+
     protected abstract void ApplyCoreInPlace(Vector256<float>[][] pixels, int width, int height);
+
+    private static void NormalizeInputRange(Vector256<float>[][] pixels, int pixelCount)
+    {
+        var image = ToneMapperSIMDHelper.ToImage(pixels, pixelCount, 1);
+        var scale = ToneMapperUtilities.ComputeInputScale(image.Pixels);
+        if (MathF.Abs(scale - 1f) <= 1e-6f)
+        {
+            return;
+        }
+
+        var scaleVector = Vector256.Create(scale);
+        Parallel.For(0, pixels[0].Length, i =>
+        {
+            pixels[0][i] = Avx.Multiply(pixels[0][i], scaleVector);
+            pixels[1][i] = Avx.Multiply(pixels[1][i], scaleVector);
+            pixels[2][i] = Avx.Multiply(pixels[2][i], scaleVector);
+        });
+    }
 
     protected static float SaturationToMultiplier(float saturation)
     {
@@ -80,6 +107,24 @@ internal abstract class ToneMapperSIMD
             pixels[1][i] = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(g, scale));
             pixels[2][i] = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(b, scale));
         });
+    }
+
+    private void ApplyPostProcessInPlace(Vector256<float>[][] pixels)
+    {
+        var postProcessSettings = this.Settings.PostProcess;
+        if (this.Settings.AutoAdjustEnabled)
+        {
+            var auto = ImageAnalyzerSIMD.Analyze(pixels);
+            postProcessSettings = postProcessSettings.WithAutoAdjust(auto);
+        }
+
+        if (postProcessSettings.IsNeutral())
+        {
+            return;
+        }
+
+        var labPostProcessor = new LabPostProcessorSIMD(postProcessSettings);
+        labPostProcessor.ApplyInPlace(pixels);
     }
 
     private static Vector256<float> Abs(Vector256<float> value)

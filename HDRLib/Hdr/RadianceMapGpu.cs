@@ -108,17 +108,15 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
     public void Normalize(HDRLib.HdrImageOptions options)
     {
         var accelerator = this.context.Accelerator;
-        var pixels = this.gpuPixels.GetAsArray1D();
-        var averageBrightness = HdrBrightnessNormalizer.CalculateAverageBrightness(pixels, pixels.Length);
-        var k = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f);
         if (this.toneMapperSettings is null || this.toneMapperSettings.IsNeutral())
         {
-            this.context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(k * 255f, k * 255f, k * 255f));
+            var pixels = this.gpuPixels.GetAsArray1D();
+            var averageBrightness = HdrBrightnessNormalizer.CalculateAverageBrightness(pixels, pixels.Length);
+            var scale = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f) * 255f;
+            this.context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(scale, scale, scale));
             accelerator.Synchronize();
             return;
         }
-
-        this.context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(k, k, k));
         this.toneMapper!.ApplyInPlace(this.gpuPixels, this.width, this.height);
         this.context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(255, 255, 255));
         accelerator.Synchronize();

@@ -17,6 +17,8 @@ internal static class ToneMapperUtilities
     private const float ContrastIdentity = 1.0f;
     private const float ContrastIdentityEpsilon = 1e-6f;
     private const float GammaIdentityEpsilon = 1e-3f;
+    private const float LdrMaxChannelThreshold = 1.0001f;
+    private const float InputTargetLogAverage = 0.18f;
 
     /// <summary>
     /// Applies the fitted ACES curve and clamps negative output.
@@ -112,6 +114,45 @@ internal static class ToneMapperUtilities
         }
     }
 
+    public static float ComputeInputScale(ReadOnlySpan<Rgb> pixels)
+    {
+        if (pixels.IsEmpty)
+        {
+            return 1f;
+        }
+
+        var maxChannel = 0f;
+        var logSum = 0.0f;
+        for (var i = 0; i < pixels.Length; i++)
+        {
+            var p = pixels[i];
+            maxChannel = MathF.Max(maxChannel, MathF.Max(p.Red, MathF.Max(p.Green, p.Blue)));
+            logSum += MathF.Log(MathF.Max(p.Light(), AcesConstants.ExposureEpsilon));
+        }
+
+        if (maxChannel <= LdrMaxChannelThreshold)
+        {
+            return 1f;
+        }
+
+        var logAverage = MathF.Exp(logSum / pixels.Length);
+        return InputTargetLogAverage / MathF.Max(logAverage, AcesConstants.ExposureEpsilon);
+    }
+
+    public static void NormalizeInputRange(Span<Rgb> pixels)
+    {
+        var scale = ComputeInputScale(pixels);
+        if (MathF.Abs(scale - 1f) <= 1e-6f)
+        {
+            return;
+        }
+
+        for (var i = 0; i < pixels.Length; i++)
+        {
+            pixels[i] *= scale;
+        }
+    }
+
     /// <summary>
     /// Computes automatic exposure on the GPU; reading the result synchronizes the reduction.
     /// </summary>
@@ -137,6 +178,31 @@ internal static class ToneMapperUtilities
         return key / (avgLuminance + epsilon);
     }
 
+    internal static float ComputeInputScale(
+        Accelerator accelerator,
+        ArrayView1D<Rgb, Stride1D.Dense> pixels,
+        Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<float, Stride1D.Dense>> inputStatsKernel)
+    {
+        if (pixels.Length == 0)
+        {
+            return 1f;
+        }
+
+        using var statsBuffer = accelerator.Allocate1D<float>(2);
+        statsBuffer.MemSetToZero();
+        inputStatsKernel((int)pixels.Length, pixels, statsBuffer.View);
+
+        var stats = statsBuffer.GetAsArray1D();
+        var maxChannel = stats[0];
+        if (maxChannel <= LdrMaxChannelThreshold)
+        {
+            return 1f;
+        }
+
+        var logAverage = GpuHelper.Exp(stats[1] / pixels.Length);
+        return InputTargetLogAverage / XMath.Max(logAverage, AcesConstants.ExposureEpsilon);
+    }
+
     internal static void ExposureLogSumKernel(
         Index1D index,
         ArrayView1D<Rgb, Stride1D.Dense> pixels,
@@ -144,5 +210,16 @@ internal static class ToneMapperUtilities
         float delta)
     {
         Atomic.Add(ref logSum[0], GpuHelper.Log(delta + pixels[index].Light()));
+    }
+
+    internal static void InputStatsKernel(
+        Index1D index,
+        ArrayView1D<Rgb, Stride1D.Dense> pixels,
+        ArrayView1D<float, Stride1D.Dense> stats)
+    {
+        var p = pixels[index];
+        var maxChannel = XMath.Max(p.Red, XMath.Max(p.Green, p.Blue));
+        Atomic.Max(ref stats[0], maxChannel);
+        Atomic.Add(ref stats[1], GpuHelper.Log(XMath.Max(p.Light(), AcesConstants.ExposureEpsilon)));
     }
 }

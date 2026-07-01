@@ -37,7 +37,7 @@ var result = HdrSeriesSeparator.SeparateHdrSeries(
 var processed = 0;
 var toneMapperSettings = new NaturalToneMapperSettings()
 {
-    AutoAdjustType = AutoAdjustType.None,
+    AutoAdjustEnabled = false,
     ExposureEV = 0f,
     Brightness = 1.05f,
     Contrast = 1.4f,

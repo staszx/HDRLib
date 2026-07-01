@@ -18,7 +18,7 @@ internal sealed class BrightnessBalancerToneMapper : ToneMapper
 
     protected override unsafe void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettings effectiveSettings)
     {
-        if (Avx2.IsSupported && this.settings.AutoAdjustType != AutoAdjustType.Simple)
+        if (Avx2.IsSupported && !this.settings.AutoAdjustEnabled)
         {
             var simd = new BrightnessBalancerToneMapperSIMD(this.settings);
             this.ApplyUsingSimd(image, simd.ApplyCoreOnlyInPlace);

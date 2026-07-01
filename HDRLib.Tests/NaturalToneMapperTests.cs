@@ -302,6 +302,66 @@ public class NaturalToneMapperTests
     }
 
     [Test]
+    public void ApplyInPlace_LdrBypassBrightnessZeroIsDarkerThanPositiveBrightnessWhenContrastIsFlat()
+    {
+        var source = new Rgb(0.6f, 0.5f, 0.4f);
+        var darkMapper = ToneMapperFactory.Create(new NaturalToneMapperSettings
+        {
+            BypassToneCompressionForLdr = true,
+            AutoBrightnessCompensation = true,
+            Brightness = 0f,
+            Contrast = 0f,
+            Gamma = 1f
+        });
+        var brighterMapper = ToneMapperFactory.Create(new NaturalToneMapperSettings
+        {
+            BypassToneCompressionForLdr = true,
+            AutoBrightnessCompensation = true,
+            Brightness = 0.3f,
+            Contrast = 0f,
+            Gamma = 1f
+        });
+
+        var darkImage = new Image<Rgb>(1, 1) { Pixels = [source] };
+        var brighterImage = new Image<Rgb>(1, 1) { Pixels = [source] };
+
+        darkMapper.ApplyInPlace(darkImage);
+        brighterMapper.ApplyInPlace(brighterImage);
+
+        Assert.That(darkImage.Pixels[0].Light(), Is.LessThan(brighterImage.Pixels[0].Light()));
+    }
+
+    [Test]
+    public void ApplyInPlace_CompressedBrightnessZeroIsDarkerThanPositiveBrightnessWhenContrastIsFlat()
+    {
+        var source = new Rgb(2.0f, 1.6f, 1.2f);
+        var darkMapper = ToneMapperFactory.Create(new NaturalToneMapperSettings
+        {
+            BypassToneCompressionForLdr = false,
+            AutoBrightnessCompensation = true,
+            Brightness = 0f,
+            Contrast = 0f,
+            Gamma = 1f
+        });
+        var brighterMapper = ToneMapperFactory.Create(new NaturalToneMapperSettings
+        {
+            BypassToneCompressionForLdr = false,
+            AutoBrightnessCompensation = true,
+            Brightness = 0.3f,
+            Contrast = 0f,
+            Gamma = 1f
+        });
+
+        var darkImage = new Image<Rgb>(1, 1) { Pixels = [source] };
+        var brighterImage = new Image<Rgb>(1, 1) { Pixels = [source] };
+
+        darkMapper.ApplyInPlace(darkImage);
+        brighterMapper.ApplyInPlace(brighterImage);
+
+        Assert.That(darkImage.Pixels[0].Light(), Is.LessThan(brighterImage.Pixels[0].Light()));
+    }
+
+    [Test]
     public void ApplyInPlace_DehazeReducesNeutralVeilAndPreservesColorSeparation()
     {
         var settings = new NaturalToneMapperSettings().MakeNeutral();
@@ -429,6 +489,88 @@ public class NaturalToneMapperTests
         Assert.That(
             Chroma(image.Pixels[0]) - Chroma(centerHue),
             Is.GreaterThan(Chroma(image.Pixels[1]) - Chroma(edgeHue)));
+    }
+
+    [Test]
+    public void ApplyInPlace_SaturationFilterMatchesSourceColorBeforeToneMapping()
+    {
+        var source = HsvToRgb(30f, 0.55f, 0.6f);
+        var unfilteredSettings = new NaturalToneMapperSettings().MakeNeutral();
+        unfilteredSettings.Brightness = 0.2f;
+
+        var filteredSettings = new NaturalToneMapperSettings().MakeNeutral();
+        filteredSettings.Brightness = 0.2f;
+        filteredSettings.SaturationFilters =
+        [
+            new SaturationColorFilter
+            {
+                Enabled = true,
+                SaturationAdjustment = -100f,
+                Ranges =
+                [
+                    new SaturationColorRange
+                    {
+                        HueMin = 20f,
+                        HueMax = 40f,
+                        SaturationMin = 0.45f,
+                        SaturationMax = 0.65f,
+                        ValueMin = 0.55f,
+                        ValueMax = 0.65f,
+                        SaturationMultiplier = -100f
+                    }
+                ]
+            }
+        ];
+
+        var unfiltered = new Image<Rgb>(1, 1) { Pixels = [source] };
+        var filtered = new Image<Rgb>(1, 1) { Pixels = [source] };
+
+        ToneMapperFactory.Create(unfilteredSettings).ApplyInPlace(unfiltered);
+        ToneMapperFactory.Create(filteredSettings).ApplyInPlace(filtered);
+
+        Assert.That(Chroma(filtered.Pixels[0]), Is.LessThan(Chroma(unfiltered.Pixels[0]) * 0.2f));
+    }
+
+    [Test]
+    public void ApplyInPlace_SaturationFilterMatchesSourceColorBeforeWhiteBalance()
+    {
+        var source = HsvToRgb(30f, 0.55f, 0.6f);
+        var unfilteredSettings = new NaturalToneMapperSettings().MakeNeutral();
+        unfilteredSettings.WhiteBalanceReferenceType = WhiteBalanceReferenceType.Gray;
+        unfilteredSettings.WhiteBalanceReferenceColor = new Rgb(0.2f, 0.8f, 0.8f);
+
+        var filteredSettings = new NaturalToneMapperSettings().MakeNeutral();
+        filteredSettings.WhiteBalanceReferenceType = WhiteBalanceReferenceType.Gray;
+        filteredSettings.WhiteBalanceReferenceColor = new Rgb(0.2f, 0.8f, 0.8f);
+        filteredSettings.SaturationFilters =
+        [
+            new SaturationColorFilter
+            {
+                Enabled = true,
+                SaturationAdjustment = -100f,
+                Ranges =
+                [
+                    new SaturationColorRange
+                    {
+                        HueMin = 20f,
+                        HueMax = 40f,
+                        SaturationMin = 0.45f,
+                        SaturationMax = 0.65f,
+                        ValueMin = 0.55f,
+                        ValueMax = 0.65f,
+                        SaturationMultiplier = -100f
+                    }
+                ]
+            }
+        ];
+
+        var unfiltered = new Image<Rgb>(1, 1) { Pixels = [source] };
+        var filtered = new Image<Rgb>(1, 1) { Pixels = [source] };
+
+        ToneMapperFactory.Create(unfilteredSettings).ApplyInPlace(unfiltered);
+        ToneMapperFactory.Create(filteredSettings).ApplyInPlace(filtered);
+
+        Assert.That(Chroma(filtered.Pixels[0]), Is.LessThan(Chroma(unfiltered.Pixels[0]) * 0.2f));
     }
 
     [Test]

@@ -29,12 +29,22 @@ internal sealed class ImageAnalyzerGpu
     private const float BrightnessTarget = 0.50f;
     private const float BrightnessMin = 0.7f;
     private const float BrightnessMax = 1.4f;
+    private const float ShadowRangeEnd = 0.25f;
+    private const float ShadowPercentile = 0.20f;
+    private const float ShadowTarget = 0.28f;
+    private const float ShadowMassMin = 0.10f;
+    private const float ShadowMassMax = 0.55f;
+    private const float ShadowMin = 1.0f;
+    private const float ShadowMax = 1.35f;
+    private const float MidtoneMin = 0.90f;
+    private const float MidtoneMax = 1.20f;
     private const float HighlightRangeStart = 0.85f;
-    private const float HighlightMassHigh = 0.20f;
-    private const float HighlightMassMedium = 0.10f;
-    private const float HighlightCompressionStrong = 0.80f;
-    private const float HighlightCompressionMedium = 0.90f;
+    private const float HighlightPercentile = 0.95f;
+    private const float HighlightPercentileStart = 0.85f;
+    private const float HighlightMassStart = 0.05f;
+    private const float HighlightMassMax = 0.25f;
     private const float HighlightCompressionOff = 1.00f;
+    private const float HighlightCompressionMax = 1.35f;
 
     private readonly Accelerator accelerator;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<int, Stride1D.Dense>, ArrayView1D<float, Stride1D.Dense>> buildHistogramKernel;
@@ -50,7 +60,17 @@ internal sealed class ImageAnalyzerGpu
         var total = (int)gpuPixels.Length;
         if (total == 0)
         {
-            return new ImageAdjustSettings { ExposureEV = 0, Contrast = 1.0f, Brightness = 1.0f, Saturation = 1.0f, HighlightCompression = 1.0f, DynamicRangeStops = 0 };
+            return new ImageAdjustSettings
+            {
+                ExposureEV = 0,
+                Contrast = 1.0f,
+                Brightness = 1.0f,
+                Shadows = 1.0f,
+                Midtones = 1.0f,
+                Saturation = 1.0f,
+                HighlightCompression = 1.0f,
+                DynamicRangeStops = 0
+            };
         }
 
         using var histGpu = this.accelerator.Allocate1D<int>(HistBins);
@@ -66,28 +86,28 @@ internal sealed class ImageAnalyzerGpu
         var exposureEV = ComputeAutoExposure(luminance, out var drStops);
         var contrast = ComputeContrastFromHistogram(hist, total);
         var brightness = ComputeBrightnessFromHistogram(hist);
-        var saturation = SaturationBase + (contrast - SaturationBase) * SaturationContrastFactor;
+        var shadows = ComputeShadowsFromHistogram(hist, total);
+        var midtones = ComputeMidtonesFromHistogram(hist);
+        var saturation = SaturationBase + ((contrast - SaturationBase) * SaturationContrastFactor);
         saturation = Math.Clamp(saturation, SaturationMin, SaturationMax);
 
-        var hc = ComputeHighlightCompression(hist, total);
+        var highlights = ComputeHighlightCompression(hist, total);
         return new ImageAdjustSettings
         {
             ExposureEV = exposureEV,
             Contrast = contrast,
             Brightness = brightness,
+            Shadows = shadows,
+            Midtones = midtones,
             Saturation = saturation,
-            HighlightCompression = hc,
+            HighlightCompression = highlights,
             DynamicRangeStops = drStops
         };
     }
 
     private static void BuildHistogramAndLuminanceKernel(Index1D index, ArrayView1D<Rgb, Stride1D.Dense> px, ArrayView1D<int, Stride1D.Dense> hist, ArrayView1D<float, Stride1D.Dense> luminance)
     {
-        const float rw = 0.2126f;
-        const float gw = 0.7152f;
-        const float bw = 0.0722f;
-        var p = px[index];
-        var l = rw * p.Red + gw * p.Green + bw * p.Blue;
+        var l = px[index].Light();
         luminance[index] = l;
 
         var idx = (int)(l * (HistBins - 1));
@@ -133,7 +153,7 @@ internal sealed class ImageAnalyzerGpu
         }
 
         var midMass = (float)midCount / total;
-        return Math.Clamp(ContrastMin + midMass * (ContrastMax - ContrastMin), ContrastMin, ContrastMax);
+        return Math.Clamp(ContrastMin + (midMass * (ContrastMax - ContrastMin)), ContrastMin, ContrastMax);
     }
 
     private static float ComputeBrightnessFromHistogram(int[] hist)
@@ -159,6 +179,46 @@ internal sealed class ImageAnalyzerGpu
         return Math.Clamp(BrightnessTarget / (sum / count), BrightnessMin, BrightnessMax);
     }
 
+    private static float ComputeShadowsFromHistogram(int[] hist, int total)
+    {
+        var shadowEnd = (int)(ShadowRangeEnd * (HistBins - 1));
+        var shadowCount = 0;
+        for (var i = 0; i <= shadowEnd; i++)
+        {
+            shadowCount += hist[i];
+        }
+
+        var shadowMass = (float)shadowCount / total;
+        var p20 = PercentileFromHistogram(hist, total, ShadowPercentile);
+        var darkness = Math.Clamp((ShadowTarget - p20) / ShadowTarget, 0f, 1f);
+        var mass = Math.Clamp((shadowMass - ShadowMassMin) / (ShadowMassMax - ShadowMassMin), 0f, 1f);
+        return Math.Clamp(1f + (darkness * mass * (ShadowMax - 1f)), ShadowMin, ShadowMax);
+    }
+
+    private static float ComputeMidtonesFromHistogram(int[] hist)
+    {
+        float sum = 0;
+        var count = 0;
+        var start = (int)(ContrastRangeStart * HistBins);
+        var end = (int)(ContrastRangeEnd * HistBins);
+
+        for (var i = start; i <= end; i++)
+        {
+            var l = (float)i / (HistBins - 1);
+            var freq = hist[i];
+            sum += l * freq;
+            count += freq;
+        }
+
+        if (count == 0)
+        {
+            return 1.0f;
+        }
+
+        var balance = Math.Clamp((BrightnessTarget - (sum / count)) / BrightnessTarget, -1f, 1f);
+        return Math.Clamp(1f + (balance * 0.20f), MidtoneMin, MidtoneMax);
+    }
+
     private static float ComputeHighlightCompression(int[] hist, int total)
     {
         var start = (int)(HighlightRangeStart * HistBins);
@@ -169,9 +229,11 @@ internal sealed class ImageAnalyzerGpu
         }
 
         var hiMass = (float)count / total;
-        if (hiMass > HighlightMassHigh) return HighlightCompressionStrong;
-        if (hiMass > HighlightMassMedium) return HighlightCompressionMedium;
-        return HighlightCompressionOff;
+        var massPressure = Math.Clamp((hiMass - HighlightMassStart) / (HighlightMassMax - HighlightMassStart), 0f, 1f);
+        var p95 = PercentileFromHistogram(hist, total, HighlightPercentile);
+        var percentilePressure = Math.Clamp((p95 - HighlightPercentileStart) / (1f - HighlightPercentileStart), 0f, 1f);
+        var pressure = Math.Max(massPressure, percentilePressure);
+        return Math.Clamp(HighlightCompressionOff + (pressure * (HighlightCompressionMax - HighlightCompressionOff)), HighlightCompressionOff, HighlightCompressionMax);
     }
 
     private static float PercentileSorted(float[] sorted, float p)
@@ -181,6 +243,23 @@ internal sealed class ImageAnalyzerGpu
         var idx = (int)pos;
         var frac = pos - idx;
         if (idx >= n - 1) return sorted[n - 1];
-        return sorted[idx] * (1.0f - frac) + sorted[idx + 1] * frac;
+        return (sorted[idx] * (1.0f - frac)) + (sorted[idx + 1] * frac);
+    }
+
+    private static float PercentileFromHistogram(int[] hist, int total, float p)
+    {
+        var target = p * Math.Max(total - 1, 0);
+        var cumulative = 0;
+
+        for (var i = 0; i < hist.Length; i++)
+        {
+            cumulative += hist[i];
+            if (cumulative > target)
+            {
+                return (float)i / (HistBins - 1);
+            }
+        }
+
+        return 1.0f;
     }
 }

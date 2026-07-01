@@ -51,6 +51,8 @@ internal sealed class AcesFilmicToneMapperSIMD : ToneMapperSIMD
     public float Saturation { get; }
     public float Gamma { get; }
 
+    protected override bool NormalizesInputRange => false;
+
     protected override void ApplyCoreInPlace(Vector256<float>[][] pixels, int width, int height)
     {
         var count = width * height;

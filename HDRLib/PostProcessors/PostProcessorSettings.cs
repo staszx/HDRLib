@@ -15,4 +15,35 @@ public sealed class PostProcessSettings
     public float Vibrance { get; set; } = 1.0f;
 
     #endregion
+
+    #region Methods
+
+    public bool IsNeutral(float epsilon = 1e-6f)
+    {
+        return MathF.Abs(this.Exposure) <= epsilon &&
+               MathF.Abs(this.Brightness - 1f) <= epsilon &&
+               MathF.Abs(this.Shadows - 1f) <= epsilon &&
+               MathF.Abs(this.Midtones - 1f) <= epsilon &&
+               MathF.Abs(this.Highlights - 1f) <= epsilon &&
+               MathF.Abs(this.Contrast - 1f) <= epsilon &&
+               MathF.Abs(this.Vibrance - 1f) <= epsilon;
+    }
+
+    public PostProcessSettings Combine(PostProcessSettings other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        return new PostProcessSettings
+        {
+            Exposure = this.Exposure + other.Exposure,
+            Brightness = this.Brightness * other.Brightness,
+            Shadows = this.Shadows * other.Shadows,
+            Midtones = this.Midtones * other.Midtones,
+            Highlights = this.Highlights * other.Highlights,
+            Contrast = this.Contrast * other.Contrast,
+            Vibrance = this.Vibrance * other.Vibrance
+        };
+    }
+
+    #endregion
 }

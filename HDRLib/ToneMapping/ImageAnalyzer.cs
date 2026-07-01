@@ -3,26 +3,44 @@
 namespace HDRLib.ToneMapping;
 
 using Image;
+using PostProcessors;
 
 public sealed class ImageAdjustSettings
 {
     #region Properties
 
-    public float ExposureEV { get; init; } // �� V3 (log-based)
-    public float Contrast { get; init; } // �� �����������
-    public float Brightness { get; init; } // �� �����������
-    public float Saturation { get; init; } // �������������
-    public float HighlightCompression { get; init; } // �������������
-    public float DynamicRangeStops { get; init; } // ��� �������
+    public float ExposureEV { get; init; }
+    public float Contrast { get; init; } = 1.0f;
+    public float Brightness { get; init; } = 1.0f;
+    public float Shadows { get; init; } = 1.0f;
+    public float Midtones { get; init; } = 1.0f;
+    public float Saturation { get; init; } = 1.0f;
+    public float HighlightCompression { get; init; } = 1.0f;
+    public float DynamicRangeStops { get; init; }
 
     #endregion
 
     #region Methods
 
+    public PostProcessSettings ToPostProcessSettings(bool includeToneRegions = true, float contrastMultiplier = 1.0f, float vibranceMultiplier = 1.0f)
+    {
+        return new PostProcessSettings
+        {
+            Exposure = this.ExposureEV,
+            Brightness = this.Brightness,
+            Shadows = includeToneRegions ? this.Shadows : 1.0f,
+            Midtones = includeToneRegions ? this.Midtones : 1.0f,
+            Highlights = includeToneRegions ? this.HighlightCompression : 1.0f,
+            Contrast = this.Contrast * contrastMultiplier,
+            Vibrance = this.Saturation * vibranceMultiplier
+        };
+    }
+
     public override string ToString()
     {
-        return $"EV={this.ExposureEV:F3}, " + $"Contrast={this.Contrast:F3}, " + $"Brightness={this.Brightness:F3}, " +
-               $"Saturation={this.Saturation:F3}, " + $"HighlightCompression={this.HighlightCompression:F3}, " + $"DR={this.DynamicRangeStops:F3}";
+        return $"EV={this.ExposureEV:F3}, Contrast={this.Contrast:F3}, Brightness={this.Brightness:F3}, " +
+               $"Shadows={this.Shadows:F3}, Midtones={this.Midtones:F3}, Saturation={this.Saturation:F3}, " +
+               $"HighlightCompression={this.HighlightCompression:F3}, DR={this.DynamicRangeStops:F3}";
     }
 
     #endregion
@@ -50,12 +68,22 @@ internal static class ImageAnalyzer
     private const float BrightnessTarget = 0.50f;
     private const float BrightnessMin = 0.7f;
     private const float BrightnessMax = 1.4f;
+    private const float ShadowRangeEnd = 0.25f;
+    private const float ShadowPercentile = 0.20f;
+    private const float ShadowTarget = 0.28f;
+    private const float ShadowMassMin = 0.10f;
+    private const float ShadowMassMax = 0.55f;
+    private const float ShadowMin = 1.0f;
+    private const float ShadowMax = 1.35f;
+    private const float MidtoneMin = 0.90f;
+    private const float MidtoneMax = 1.20f;
     private const float HighlightRangeStart = 0.85f;
-    private const float HighlightMassHigh = 0.20f;
-    private const float HighlightMassMedium = 0.10f;
-    private const float HighlightCompressionStrong = 0.80f;
-    private const float HighlightCompressionMedium = 0.90f;
+    private const float HighlightPercentile = 0.95f;
+    private const float HighlightPercentileStart = 0.85f;
+    private const float HighlightMassStart = 0.05f;
+    private const float HighlightMassMax = 0.25f;
     private const float HighlightCompressionOff = 1.00f;
+    private const float HighlightCompressionMax = 1.35f;
 
     #endregion
 
@@ -66,15 +94,7 @@ internal static class ImageAnalyzer
         var total = pixels.Length;
         if (total == 0)
         {
-            return new ImageAdjustSettings
-            {
-                ExposureEV = 0,
-                Contrast = 1.0f,
-                Brightness = 1.0f,
-                Saturation = 1.0f,
-                HighlightCompression = 1.0f,
-                DynamicRangeStops = 0
-            };
+            return CreateNeutralSettings();
         }
 
         var hist = new int[HistBins];
@@ -84,35 +104,48 @@ internal static class ImageAnalyzer
         var exposureEV = ComputeAutoExposure(luminance, out var drStops);
         var contrast = ComputeContrastFromHistogram(hist, total);
         var brightness = ComputeBrightnessFromHistogram(hist);
-        var saturation = SaturationBase + (contrast - SaturationBase) * SaturationContrastFactor;
+        var shadows = ComputeShadowsFromHistogram(hist, total);
+        var midtones = ComputeMidtonesFromHistogram(hist);
+        var saturation = SaturationBase + ((contrast - SaturationBase) * SaturationContrastFactor);
         saturation = Math.Clamp(saturation, SaturationMin, SaturationMax);
 
-        var hc = ComputeHighlightCompression(hist, total);
+        var highlights = ComputeHighlightCompression(hist, total);
         return new ImageAdjustSettings
         {
             ExposureEV = exposureEV,
             Contrast = contrast,
             Brightness = brightness,
+            Shadows = shadows,
+            Midtones = midtones,
             Saturation = saturation,
-            HighlightCompression = hc,
+            HighlightCompression = highlights,
             DynamicRangeStops = drStops
+        };
+    }
+
+    private static ImageAdjustSettings CreateNeutralSettings()
+    {
+        return new ImageAdjustSettings
+        {
+            ExposureEV = 0,
+            Contrast = 1.0f,
+            Brightness = 1.0f,
+            Shadows = 1.0f,
+            Midtones = 1.0f,
+            Saturation = 1.0f,
+            HighlightCompression = 1.0f,
+            DynamicRangeStops = 0
         };
     }
 
     private static float ComputeAutoExposure(float[] luminance, out float drStops)
     {
-        
         var n = luminance.Length;
         var logL = new float[n];
 
         for (var i = 0; i < n; i++)
         {
-            var l = luminance[i];
-            if (l < 0)
-            {
-                l = 0;
-            }
-
+            var l = MathF.Max(luminance[i], 0f);
             logL[i] = MathF.Log(l + ExposureEpsilon, 2.0f);
         }
 
@@ -128,23 +161,20 @@ internal static class ImageAnalyzer
         }
 
         var lnMid = PercentileSorted(logL, 0.50f);
-
         var lmid = MathF.Pow(2.0f, lnMid);
+        var ev = MathF.Log(ExposureTargetMid / (lmid + ExposureEpsilon), 2.0f);
 
-        var EV = MathF.Log(ExposureTargetMid / (lmid + ExposureEpsilon), 2.0f);
-
-        return Math.Clamp(EV, ExposureEvMin, ExposureEvMax);
+        return Math.Clamp(ev, ExposureEvMin, ExposureEvMax);
     }
 
     private static void BuildHistogramAndLuminance(Rgb[] px, int[] hist, float[] luminance)
     {
         Array.Clear(hist);
-        float scale = HistBins - 1;
+        const float scale = HistBins - 1;
 
         for (var i = 0; i < px.Length; i++)
         {
-            var p = px[i];
-            var l = p.Light();
+            var l = px[i].Light();
             luminance[i] = l;
 
             var idx = (int)(l * scale);
@@ -157,26 +187,22 @@ internal static class ImageAnalyzer
     {
         var start = (int)(ContrastRangeStart * HistBins);
         var end = (int)(ContrastRangeEnd * HistBins);
-
         var midCount = 0;
+
         for (var i = start; i <= end; i++)
         {
             midCount += hist[i];
         }
 
         var midMass = (float)midCount / total;
-        var minC = ContrastMin;
-        var maxC = ContrastMax;
-
-        var contrast = minC + midMass * (maxC - minC);
-        return Math.Clamp(contrast, minC, maxC);
+        var contrast = ContrastMin + (midMass * (ContrastMax - ContrastMin));
+        return Math.Clamp(contrast, ContrastMin, ContrastMax);
     }
 
     private static float ComputeBrightnessFromHistogram(int[] hist)
     {
         float sum = 0;
         var count = 0;
-
         var start = (int)(BrightnessRangeStart * HistBins);
         var end = (int)(BrightnessRangeEnd * HistBins);
 
@@ -184,7 +210,6 @@ internal static class ImageAnalyzer
         {
             var l = (float)i / (HistBins - 1);
             var freq = hist[i];
-
             sum += l * freq;
             count += freq;
         }
@@ -194,11 +219,48 @@ internal static class ImageAnalyzer
             return 1.0f;
         }
 
-        var avgMid = sum / count;
-
-        var brightness = BrightnessTarget / avgMid;
-
+        var brightness = BrightnessTarget / (sum / count);
         return Math.Clamp(brightness, BrightnessMin, BrightnessMax);
+    }
+
+    private static float ComputeShadowsFromHistogram(int[] hist, int total)
+    {
+        var shadowEnd = (int)(ShadowRangeEnd * (HistBins - 1));
+        var shadowCount = 0;
+        for (var i = 0; i <= shadowEnd; i++)
+        {
+            shadowCount += hist[i];
+        }
+
+        var shadowMass = (float)shadowCount / total;
+        var p20 = PercentileFromHistogram(hist, total, ShadowPercentile);
+        var darkness = Math.Clamp((ShadowTarget - p20) / ShadowTarget, 0f, 1f);
+        var mass = Math.Clamp((shadowMass - ShadowMassMin) / (ShadowMassMax - ShadowMassMin), 0f, 1f);
+        return Math.Clamp(1f + (darkness * mass * (ShadowMax - 1f)), ShadowMin, ShadowMax);
+    }
+
+    private static float ComputeMidtonesFromHistogram(int[] hist)
+    {
+        float sum = 0;
+        var count = 0;
+        var start = (int)(ContrastRangeStart * HistBins);
+        var end = (int)(ContrastRangeEnd * HistBins);
+
+        for (var i = start; i <= end; i++)
+        {
+            var l = (float)i / (HistBins - 1);
+            var freq = hist[i];
+            sum += l * freq;
+            count += freq;
+        }
+
+        if (count == 0)
+        {
+            return 1.0f;
+        }
+
+        var balance = Math.Clamp((BrightnessTarget - (sum / count)) / BrightnessTarget, -1f, 1f);
+        return Math.Clamp(1f + (balance * 0.20f), MidtoneMin, MidtoneMax);
     }
 
     private static float ComputeHighlightCompression(int[] hist, int total)
@@ -212,24 +274,16 @@ internal static class ImageAnalyzer
         }
 
         var hiMass = (float)count / total;
-
-        if (hiMass > HighlightMassHigh)
-        {
-            return HighlightCompressionStrong;
-        }
-
-        if (hiMass > HighlightMassMedium)
-        {
-            return HighlightCompressionMedium;
-        }
-
-        return HighlightCompressionOff;
+        var massPressure = Math.Clamp((hiMass - HighlightMassStart) / (HighlightMassMax - HighlightMassStart), 0f, 1f);
+        var p95 = PercentileFromHistogram(hist, total, HighlightPercentile);
+        var percentilePressure = Math.Clamp((p95 - HighlightPercentileStart) / (1f - HighlightPercentileStart), 0f, 1f);
+        var pressure = Math.Max(massPressure, percentilePressure);
+        return Math.Clamp(HighlightCompressionOff + (pressure * (HighlightCompressionMax - HighlightCompressionOff)), HighlightCompressionOff, HighlightCompressionMax);
     }
 
     private static float PercentileSorted(float[] sorted, float p)
     {
         var n = sorted.Length;
-
         var pos = p * (n - 1);
         var idx = (int)pos;
         var frac = pos - idx;
@@ -239,7 +293,24 @@ internal static class ImageAnalyzer
             return sorted[n - 1];
         }
 
-        return sorted[idx] * (1.0f - frac) + sorted[idx + 1] * frac;
+        return (sorted[idx] * (1.0f - frac)) + (sorted[idx + 1] * frac);
+    }
+
+    private static float PercentileFromHistogram(int[] hist, int total, float p)
+    {
+        var target = p * Math.Max(total - 1, 0);
+        var cumulative = 0;
+
+        for (var i = 0; i < hist.Length; i++)
+        {
+            cumulative += hist[i];
+            if (cumulative > target)
+            {
+                return (float)i / (HistBins - 1);
+            }
+        }
+
+        return 1.0f;
     }
 
     #endregion

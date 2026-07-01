@@ -5,8 +5,6 @@ namespace HDRLib.Hdr.Debevec;
 using Gpu;
 using HDRLib.Image;
 using HDRLib.Interfaces;
-using HDRLib.Post;
-using HDRLib.PostProcessors;
 using HDRLib.ToneMapping;
 using HDRLib.ToneMapping.Factories;
 using HDRLib.ToneMapping.Settings;
@@ -275,24 +273,6 @@ public sealed class SingleImageProcessor : IDisposable
         var toneMapper = ToneMapperFactory.Create(toneMapperSettings);
         toneMapper.ApplyInPlace(image);
 
-        if (toneMapperSettings is not NaturalToneMapperSettings)
-        {
-            var auto = ImageAnalyzer.Analyze(image.Pixels);
-            var settings = new PostProcessSettings
-            {
-                Exposure = auto.ExposureEV,
-                Brightness = (float)auto.Brightness,
-                Shadows = 1.25f,
-                Midtones = 1.1f,
-                Highlights = (float)auto.HighlightCompression,
-                Contrast = (float)auto.Contrast,
-                Vibrance = (float)auto.Saturation
-            };
-
-            var labPostProcessor = new LabPostProcessor(settings);
-            labPostProcessor.ApplyInPlace(image);
-        }
-
         ScaleTo255(image.Pixels);
         this.pixels = image.Pixels;
     }
@@ -308,24 +288,6 @@ public sealed class SingleImageProcessor : IDisposable
             var localContrastPixels = FromSimd(simdPixels, this.width * this.height);
             LocalContrastProcessor.ApplyInPlace(localContrastPixels, this.width, this.height, toneMapperSettings.LocalContrast, toneMapperSettings.LocalContrastRadius);
             simdPixels = ToSimd(localContrastPixels);
-        }
-
-        if (toneMapperSettings is not NaturalToneMapperSettings)
-        {
-            var auto = ImageAnalyzerSIMD.Analyze(simdPixels);
-            var settings = new PostProcessSettings
-            {
-                Exposure = auto.ExposureEV,
-                Brightness = (float)auto.Brightness,
-                Shadows = 1.25f,
-                Midtones = 1.1f,
-                Highlights = (float)auto.HighlightCompression,
-                Contrast = (float)auto.Contrast * 1.8f,
-                Vibrance = (float)auto.Saturation * 1.2f
-            };
-
-            var labPostProcessor = new LabPostProcessorSIMD(settings);
-            labPostProcessor.ApplyInPlace(simdPixels);
         }
 
         var restored = FromSimd(simdPixels, this.width * this.height);
@@ -348,17 +310,6 @@ public sealed class SingleImageProcessor : IDisposable
 
         context.Processor.Copy((int)this.gpuSourcePixels.Length, this.gpuSourcePixels, this.gpuPixels);
 
-        //var auto = this.analyzerGpu.Analyze(gpuPixels);
-        //var settings = new PostProcessSettings
-        //{
-        //    Exposure = auto.ExposureEV,
-        //    Brightness = (float)auto.Brightness,
-        //   // Shadows = 1.25f,
-        //    //Midtones = 1.1f,
-        //    Highlights = (float)auto.HighlightCompression,
-        //    Contrast = (float)auto.Contrast,
-        // //   Vibrance = (float)auto.Saturation
-        //};
         toneMapper.ApplyInPlace(this.gpuPixels.View, this.width, this.height);
         context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(255, 255, 255));
         accelerator.Synchronize();

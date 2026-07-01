@@ -16,7 +16,7 @@ internal sealed class ContrastBalancerToneMapperSIMD : ToneMapperSIMD
         this.settings = settings;
     }
 
-    protected override bool AppliesToneBoostInternally => true;
+    protected override bool AppliesToneBoostInternally => false;
 
     protected override void ApplyCoreInPlace(Vector256<float>[][] pixels, int width, int height)
     {
@@ -123,6 +123,9 @@ internal sealed class ContrastBalancerToneMapperSIMD : ToneMapperSIMD
                MathF.Abs(settings.LightingEffect - 1f) > Epsilon ||
                MathF.Abs(settings.Luminance - 1f) > Epsilon ||
                MathF.Abs(settings.WhiteClip - ClippedToneMapperSettings.NeutralWhiteClip) > Epsilon ||
-               MathF.Abs(settings.BlackClip - ClippedToneMapperSettings.NeutralBlackClip) > Epsilon;
+               MathF.Abs(settings.BlackClip - ClippedToneMapperSettings.NeutralBlackClip) > Epsilon ||
+               MathF.Abs(settings.ExposureEV) > Epsilon ||
+               MathF.Abs(settings.Brightness - 1f) > Epsilon ||
+               MathF.Abs(settings.Contrast - 1f) > Epsilon;
     }
 }

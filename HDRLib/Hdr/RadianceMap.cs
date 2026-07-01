@@ -156,12 +156,16 @@ internal class RadianceMap : IRadianceMap
 
     public unsafe void Normalize(HDRLib.HdrImageOptions options)
     {
-
-        var averageBrightness = HdrBrightnessNormalizer.CalculateAverageBrightness(this.Image.Pixels, this.Image.Pixels.Length);
-        var k = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f);
-        for (var i = 0; i < this.Image.Pixels.Length; i++)
+        if (this.toneMapperSettings is null || this.toneMapperSettings.IsNeutral())
         {
-            this.Image.Pixels[i] *= k;
+            var averageBrightness = HdrBrightnessNormalizer.CalculateAverageBrightness(this.Image.Pixels, this.Image.Pixels.Length);
+            var scale = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f);
+            for (var i = 0; i < this.Image.Pixels.Length; i++)
+            {
+                this.Image.Pixels[i] *= scale * 255f;
+            }
+
+            return;
         }
 
         if (this.toneMapperSettings is not null)

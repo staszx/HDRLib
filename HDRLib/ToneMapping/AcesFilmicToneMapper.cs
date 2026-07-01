@@ -36,9 +36,11 @@ internal sealed class AcesFilmicToneMapper : ToneMapper
 
     #region Methods
 
+    protected override bool NormalizesInputRange => false;
+
     protected override void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettings effectiveSettings)
     {
-        if (Avx2.IsSupported && this.settings.AutoAdjustType != AutoAdjustType.Simple)
+        if (Avx2.IsSupported && !this.settings.AutoAdjustEnabled)
         {
             var simd = new AcesFilmicToneMapperSIMD(this.settings);
             this.ApplyUsingSimd(image, simd.ApplyCoreOnlyInPlace);

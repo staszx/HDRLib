@@ -16,9 +16,14 @@ internal sealed class NaturalToneMapper : ToneMapper
         this.settings = settings;
     }
 
+    protected override bool NormalizesInputRange => false;
+
+    protected override bool PreservesSourceBeforeProcessing => true;
+
     protected override unsafe void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettings effectiveSettings)
     {
         var pixelCount = image.Length;
+        var sourcePixels = this.SourcePixelsBeforeProcessing;
 
         using var handle = new PinnedArray<Rgb>(image.Pixels);
         var pixels = handle.Pointer;
@@ -47,15 +52,15 @@ internal sealed class NaturalToneMapper : ToneMapper
             exposureCompensation * effectiveSettings.Brightness <= 1f)
         {
             var ldrBrightnessCompensation = this.settings.AutoBrightnessCompensation
-                ? ComputeBrightnessCompensation(this.settings.OutputMidGray, logAverage * exposureCompensation * effectiveSettings.Brightness)
+                ? ComputeBrightnessCompensation(this.settings.OutputMidGray, logAverage * exposureCompensation)
                 : 1f;
-            ApplyLdrBypassAdjustments(pixels, (int)pixelCount, exposureCompensation * ldrBrightnessCompensation, effectiveSettings);
+            ApplyLdrBypassAdjustments(pixels, sourcePixels, (int)pixelCount, exposureCompensation * ldrBrightnessCompensation, effectiveSettings);
             ApplyGamma(pixels, (int)pixelCount, effectiveSettings.Gamma);
             return;
         }
 
         var compensationExposure = MathF.Max(this.settings.TargetGray, 0.01f) / MathF.Max(logAverage, Epsilon);
-        var exposure = compensationExposure * exposureCompensation * effectiveSettings.Brightness;
+        var exposure = compensationExposure * exposureCompensation;
 
         var whitePoint = MathF.Max(whiteLum * compensationExposure, 1e-3f);
         var whitePointSquared = whitePoint * whitePoint;
@@ -80,11 +85,13 @@ internal sealed class NaturalToneMapper : ToneMapper
         Parallel.For(0, pixelCount, i =>
         {
             var rgb = pixels[i];
+            var sourceRgb = sourcePixels is null ? rgb : sourcePixels[i];
             var lum = MathF.Max(rgb.Light(), Epsilon);
 
             var exposedLum = lum * exposure;
             var mappedLum = Compress(exposedLum, adjustedWhitePointSquared) * brightnessCompensation;
             mappedLum = Math.Clamp(((mappedLum - 0.5f) * adaptiveContrast) + 0.5f, 0f, 1f);
+            mappedLum = Math.Clamp(mappedLum * effectiveSettings.Brightness, 0f, 1f);
 
             var scale = mappedLum / lum;
             var mapped = rgb * scale;
@@ -94,7 +101,7 @@ internal sealed class NaturalToneMapper : ToneMapper
                 ? adaptiveSaturation
                 : 1f + ((adaptiveSaturation - 1f) * (1f - Math.Clamp(highlightCompression, 0f, 1f)));
             sat = ApplyVibrance(sat, mapped);
-            sat = ApplySaturationRanges(sat, mapped, saturationRanges);
+            sat = ApplySaturationRanges(sat, sourceRgb, saturationRanges);
 
             mapped.Red = mappedLum + ((mapped.Red - mappedLum) * sat);
             mapped.Green = mappedLum + ((mapped.Green - mappedLum) * sat);
@@ -308,9 +315,9 @@ internal sealed class NaturalToneMapper : ToneMapper
         });
     }
 
-    private unsafe void ApplyLdrBypassAdjustments(Rgb* pixels, int pixelCount, float exposureCompensation, EffectiveToneMapperSettings effectiveSettings)
+    private unsafe void ApplyLdrBypassAdjustments(Rgb* pixels, Rgb[]? sourcePixels, int pixelCount, float exposureCompensation, EffectiveToneMapperSettings effectiveSettings)
     {
-        var brightness = MathF.Max(effectiveSettings.Brightness * exposureCompensation, 0f);
+        var brightness = MathF.Max(effectiveSettings.Brightness, 0f);
         var contrast = MathF.Max(effectiveSettings.Contrast, 0f);
         var saturation = MathF.Max(0f, effectiveSettings.Saturation);
         var saturationRanges = this.settings.GetSaturationColorRanges();
@@ -318,14 +325,16 @@ internal sealed class NaturalToneMapper : ToneMapper
         Parallel.For(0, pixelCount, i =>
         {
             var mapped = pixels[i];
-            var lum = MathF.Max(mapped.Light() * brightness, Epsilon);
+            var sourceRgb = sourcePixels is null ? mapped : sourcePixels[i];
+            var lum = MathF.Max(mapped.Light() * exposureCompensation, Epsilon);
             lum = Math.Clamp(((lum - 0.5f) * contrast) + 0.5f, 0f, 1f);
+            lum = Math.Clamp(lum * brightness, 0f, 1f);
 
             var scale = lum / MathF.Max(mapped.Light(), Epsilon);
             mapped *= scale;
 
             var sat = ApplyVibrance(saturation, mapped);
-            sat = ApplySaturationRanges(sat, mapped, saturationRanges);
+            sat = ApplySaturationRanges(sat, sourceRgb, saturationRanges);
             mapped.Red = lum + ((mapped.Red - lum) * sat);
             mapped.Green = lum + ((mapped.Green - lum) * sat);
             mapped.Blue = lum + ((mapped.Blue - lum) * sat);

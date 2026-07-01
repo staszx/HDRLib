@@ -19,6 +19,8 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
 
     protected override bool AppliesToneBoostInternally => true;
 
+    protected override bool NormalizesInputRange => false;
+
     protected override void ApplyCoreInPlace(Vector256<float>[][] pixels, int width, int height)
     {
         var count = width * height;
@@ -51,7 +53,7 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
             exposureCompensation * this.settings.Brightness <= 1f)
         {
             var ldrBrightnessCompensation = this.settings.AutoBrightnessCompensation
-                ? ComputeBrightnessCompensation(this.settings.OutputMidGray, logAverage * exposureCompensation * this.settings.Brightness)
+                ? ComputeBrightnessCompensation(this.settings.OutputMidGray, logAverage * exposureCompensation)
                 : 1f;
             ApplyLdrBypassAdjustments(pixels, exposureCompensation * ldrBrightnessCompensation);
             ApplyWhiteBalanceIfEnabled(pixels, width, height);
@@ -60,7 +62,7 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
         }
 
         var compensationExposure = MathF.Max(this.settings.TargetGray, 0.01f) / MathF.Max(logAverage, 1e-6f);
-        var exposure = compensationExposure * exposureCompensation * this.settings.Brightness;
+        var exposure = compensationExposure * exposureCompensation;
 
         var whitePoint = MathF.Max(whiteLum * compensationExposure, 1e-3f);
         var whitePointSquared = whitePoint * whitePoint;
@@ -86,6 +88,7 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
         var whitePointSquaredV = Vector256.Create(adjustedWhitePointSquared);
         var brightnessCompensationV = Vector256.Create(brightnessCompensation);
         var contrastV = Vector256.Create(adaptiveContrast);
+        var brightnessV = Vector256.Create(MathF.Max(this.settings.Brightness, 0f));
         var halfV = Vector256.Create(0.5f);
         var oneV = Vector256.Create(1f);
         var epsV = Vector256.Create(1e-6f);
@@ -97,6 +100,9 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
             var r = pixels[0][i];
             var g = pixels[1][i];
             var b = pixels[2][i];
+            var sourceR = r;
+            var sourceG = g;
+            var sourceB = b;
 
             var l = Avx.Add(Avx.Add(Avx.Multiply(r, ToneMapperSIMDHelper.Rw), Avx.Multiply(g, ToneMapperSIMDHelper.Gw)), Avx.Multiply(b, ToneMapperSIMDHelper.Bw));
             l = Avx.Max(l, epsV);
@@ -107,6 +113,7 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
             mappedLum = Avx.Multiply(mappedLum, brightnessCompensationV);
             mappedLum = Avx.Multiply(mappedLum, ComputeToneBoost(mappedLum, this.settings.ShadowsBoost, this.settings.MidtonesBoost, this.settings.HighlightsBoost));
             mappedLum = ToneMapperSIMDHelper.Clamp01(Avx.Add(Avx.Multiply(Avx.Subtract(mappedLum, halfV), contrastV), halfV));
+            mappedLum = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(mappedLum, brightnessV));
 
             var scale = Avx.Divide(mappedLum, l);
             r = Avx.Multiply(r, scale);
@@ -119,7 +126,7 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
                 ? adaptiveSaturationV
                 : Avx.Add(oneV, Avx.Multiply(satBaseV, Avx.Subtract(oneV, compressed)));
             sat = ApplyVibrance(sat, r, g, b);
-            sat = ApplySaturationRanges(sat, r, g, b, saturationRanges);
+            sat = ApplySaturationRanges(sat, sourceR, sourceG, sourceB, saturationRanges);
 
             r = Avx.Add(mappedLum, Avx.Multiply(Avx.Subtract(r, mappedLum), sat));
             g = Avx.Add(mappedLum, Avx.Multiply(Avx.Subtract(g, mappedLum), sat));
@@ -368,7 +375,8 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
 
     private void ApplyLdrBypassAdjustments(Vector256<float>[][] pixels, float exposureCompensation)
     {
-        var brightnessV = Vector256.Create(MathF.Max(this.settings.Brightness * exposureCompensation, 0f));
+        var exposureCompensationV = Vector256.Create(exposureCompensation);
+        var brightnessV = Vector256.Create(MathF.Max(this.settings.Brightness, 0f));
         var contrastV = Vector256.Create(MathF.Max(this.settings.Contrast, 0f));
         var halfV = Vector256.Create(0.5f);
         var oneV = Vector256.Create(1f);
@@ -381,10 +389,14 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
             var r = pixels[0][i];
             var g = pixels[1][i];
             var b = pixels[2][i];
+            var sourceR = r;
+            var sourceG = g;
+            var sourceB = b;
 
             var srcLum = Avx.Max(Avx.Add(Avx.Add(Avx.Multiply(r, ToneMapperSIMDHelper.Rw), Avx.Multiply(g, ToneMapperSIMDHelper.Gw)), Avx.Multiply(b, ToneMapperSIMDHelper.Bw)), epsV);
-            var mappedLum = Avx.Multiply(srcLum, brightnessV);
+            var mappedLum = Avx.Multiply(srcLum, exposureCompensationV);
             mappedLum = ToneMapperSIMDHelper.Clamp01(Avx.Add(Avx.Multiply(Avx.Subtract(mappedLum, halfV), contrastV), halfV));
+            mappedLum = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(mappedLum, brightnessV));
 
             var scale = Avx.Divide(mappedLum, srcLum);
             r = Avx.Multiply(r, scale);
@@ -393,7 +405,7 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
 
             var sat = saturationRanges.Length == 0
                 ? ApplyVibrance(baseSatV, r, g, b)
-                : ApplySaturationRanges(ApplyVibrance(baseSatV, r, g, b), r, g, b, saturationRanges);
+                : ApplySaturationRanges(ApplyVibrance(baseSatV, r, g, b), sourceR, sourceG, sourceB, saturationRanges);
 
             r = Avx.Add(mappedLum, Avx.Multiply(Avx.Subtract(r, mappedLum), sat));
             g = Avx.Add(mappedLum, Avx.Multiply(Avx.Subtract(g, mappedLum), sat));

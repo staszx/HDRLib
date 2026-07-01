@@ -18,10 +18,10 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
     private readonly NaturalToneMapperSettings settings;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<float, Stride1D.Dense>> extractLuminanceKernel;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, int> luminanceStatsKernel;
-    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float> applyKernel;
-    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float, ArrayView1D<float, Stride1D.Dense>, int> applyKernelWithRanges;
-    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float> applyLdrBypassKernel;
-    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, ArrayView1D<float, Stride1D.Dense>, int> applyLdrBypassKernelWithRanges;
+    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float, float> applyKernel;
+    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float, float, ArrayView1D<float, Stride1D.Dense>, int> applyKernelWithRanges;
+    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float> applyLdrBypassKernel;
+    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, ArrayView1D<float, Stride1D.Dense>, int> applyLdrBypassKernelWithRanges;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float> applyGammaKernel;
 
     public NaturalToneMapperGpu(GpuContext context, NaturalToneMapperSettings settings) : base(context, settings)
@@ -30,12 +30,16 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
         this.settings = settings;
         this.extractLuminanceKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<float, Stride1D.Dense>>(ExtractLuminanceKernel);
         this.luminanceStatsKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, int>(LuminanceStatsKernel);
-        this.applyKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float>(ApplyKernel);
-        this.applyKernelWithRanges = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float, ArrayView1D<float, Stride1D.Dense>, int>(ApplyKernelWithRanges);
-        this.applyLdrBypassKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float>(ApplyLdrBypassKernel);
-        this.applyLdrBypassKernelWithRanges = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, ArrayView1D<float, Stride1D.Dense>, int>(ApplyLdrBypassKernelWithRanges);
+        this.applyKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float, float>(ApplyKernel);
+        this.applyKernelWithRanges = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float, float, ArrayView1D<float, Stride1D.Dense>, int>(ApplyKernelWithRanges);
+        this.applyLdrBypassKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float>(ApplyLdrBypassKernel);
+        this.applyLdrBypassKernelWithRanges = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, ArrayView1D<float, Stride1D.Dense>, int>(ApplyLdrBypassKernelWithRanges);
         this.applyGammaKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float>(ApplyGammaKernel);
     }
+
+    protected override bool NormalizesInputRange => false;
+
+    protected override bool PreservesSourceBeforeProcessing => true;
 
     protected override void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, EffectiveToneMapperSettings effectiveSettings)
     {
@@ -96,20 +100,21 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
             exposureCompensation * brightness <= 1f)
         {
             var ldrBrightnessCompensation = this.settings.AutoBrightnessCompensation
-                ? ComputeBrightnessCompensation(this.settings.OutputMidGray, logAverage * exposureCompensation * brightness)
+                ? ComputeBrightnessCompensation(this.settings.OutputMidGray, logAverage * exposureCompensation)
                 : 1f;
-            var ldrBrightness = MathF.Max(brightness * exposureCompensation * ldrBrightnessCompensation, 0f);
+            var ldrExposure = exposureCompensation * ldrBrightnessCompensation;
+            var ldrBrightness = MathF.Max(brightness, 0f);
             var ldrContrast = MathF.Max(contrast, 0f);
             var ldrSaturation = baseSaturation;
             if (saturationRanges.Length == 0)
             {
-                this.applyLdrBypassKernel(pixelCount, gpuPixels, ldrBrightness, ldrContrast, ldrSaturation);
+                this.applyLdrBypassKernel(pixelCount, gpuPixels, ldrExposure, ldrBrightness, ldrContrast, ldrSaturation);
             }
             else
             {
                 var packedRanges = PackSaturationRanges(saturationRanges);
                 using var ranges = accelerator.Allocate1D(packedRanges);
-                this.applyLdrBypassKernelWithRanges(pixelCount, gpuPixels, ldrBrightness, ldrContrast, ldrSaturation, ranges.View, saturationRanges.Length);
+                this.applyLdrBypassKernelWithRanges(pixelCount, gpuPixels, this.SourcePixelsBeforeProcessing, ldrExposure, ldrBrightness, ldrContrast, ldrSaturation, ranges.View, saturationRanges.Length);
             }
 
             accelerator.Synchronize();
@@ -118,7 +123,7 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
         }
 
         var compensationExposure = MathF.Max(this.settings.TargetGray, 0.01f) / MathF.Max(logAverage, 1e-6f);
-        var exposure = compensationExposure * exposureCompensation * brightness;
+        var exposure = compensationExposure * exposureCompensation;
 
         var whitePoint = MathF.Max(whiteLum * compensationExposure, 1e-3f);
         var whitePointSquared = whitePoint * whitePoint;
@@ -140,7 +145,7 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
 
         if (saturationRanges.Length == 0)
         {
-            this.applyKernel(pixelCount, gpuPixels, exposure, adjustedWhitePointSquared, brightnessCompensation, adaptiveContrast, adaptiveSaturation);
+            this.applyKernel(pixelCount, gpuPixels, exposure, adjustedWhitePointSquared, brightnessCompensation, adaptiveContrast, MathF.Max(brightness, 0f), adaptiveSaturation);
         }
         else
         {
@@ -149,10 +154,12 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
             this.applyKernelWithRanges(
                 pixelCount,
                 gpuPixels,
+                this.SourcePixelsBeforeProcessing,
                 exposure,
                 adjustedWhitePointSquared,
                 brightnessCompensation,
                 adaptiveContrast,
+                MathF.Max(brightness, 0f),
                 adaptiveSaturation,
                 ranges.View,
                 saturationRanges.Length);
@@ -221,6 +228,7 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
         float whitePointSquared,
         float brightnessCompensation,
         float adaptiveContrast,
+        float brightness,
         float adaptiveSaturation)
     {
         var rgb = pixels[index];
@@ -229,6 +237,7 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
         var exposedLum = lum * exposure;
         var mappedLum = Compress(exposedLum, whitePointSquared) * brightnessCompensation;
         mappedLum = XMath.Clamp(((mappedLum - 0.5f) * adaptiveContrast) + 0.5f, 0f, 1f);
+        mappedLum = XMath.Clamp(mappedLum * brightness, 0f, 1f);
 
         var scale = mappedLum / lum;
         rgb.Red *= scale;
@@ -256,20 +265,24 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
     private static void ApplyKernelWithRanges(
         Index1D index,
         ArrayView1D<Rgb, Stride1D.Dense> pixels,
+        ArrayView1D<Rgb, Stride1D.Dense> sourcePixels,
         float exposure,
         float whitePointSquared,
         float brightnessCompensation,
         float adaptiveContrast,
+        float brightness,
         float adaptiveSaturation,
         ArrayView1D<float, Stride1D.Dense> ranges,
         int rangeCount)
     {
         var rgb = pixels[index];
+        var sourceRgb = sourcePixels[index];
         var lum = XMath.Max(rgb.Light(), 1e-6f);
 
         var exposedLum = lum * exposure;
         var mappedLum = Compress(exposedLum, whitePointSquared) * brightnessCompensation;
         mappedLum = XMath.Clamp(((mappedLum - 0.5f) * adaptiveContrast) + 0.5f, 0f, 1f);
+        mappedLum = XMath.Clamp(mappedLum * brightness, 0f, 1f);
 
         var scale = mappedLum / lum;
         rgb.Red *= scale;
@@ -282,7 +295,7 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
             ? adaptiveSaturation
             : 1f + ((adaptiveSaturation - 1f) * (1f - compressed));
         sat = ApplyVibrance(sat, rgb);
-        sat = ApplySaturationRanges(sat, rgb, ranges, rangeCount);
+        sat = ApplySaturationRanges(sat, sourceRgb, ranges, rangeCount);
 
         rgb.Red = mappedLum + ((rgb.Red - mappedLum) * sat);
         rgb.Green = mappedLum + ((rgb.Green - mappedLum) * sat);
@@ -306,13 +319,15 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
     private static void ApplyLdrBypassKernel(
         Index1D index,
         ArrayView1D<Rgb, Stride1D.Dense> pixels,
+        float exposure,
         float brightness,
         float contrast,
         float saturation)
     {
         var rgb = pixels[index];
         var srcLum = XMath.Max(rgb.Light(), 1e-6f);
-        var mappedLum = XMath.Clamp(((srcLum * brightness - 0.5f) * contrast) + 0.5f, 0f, 1f);
+        var mappedLum = XMath.Clamp(((srcLum * exposure - 0.5f) * contrast) + 0.5f, 0f, 1f);
+        mappedLum = XMath.Clamp(mappedLum * brightness, 0f, 1f);
 
         var scale = mappedLum / srcLum;
         rgb.Red *= scale;
@@ -333,6 +348,8 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
     private static void ApplyLdrBypassKernelWithRanges(
         Index1D index,
         ArrayView1D<Rgb, Stride1D.Dense> pixels,
+        ArrayView1D<Rgb, Stride1D.Dense> sourcePixels,
+        float exposure,
         float brightness,
         float contrast,
         float saturation,
@@ -340,8 +357,10 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
         int rangeCount)
     {
         var rgb = pixels[index];
+        var sourceRgb = sourcePixels[index];
         var srcLum = XMath.Max(rgb.Light(), 1e-6f);
-        var mappedLum = XMath.Clamp(((srcLum * brightness - 0.5f) * contrast) + 0.5f, 0f, 1f);
+        var mappedLum = XMath.Clamp(((srcLum * exposure - 0.5f) * contrast) + 0.5f, 0f, 1f);
+        mappedLum = XMath.Clamp(mappedLum * brightness, 0f, 1f);
 
         var scale = mappedLum / srcLum;
         rgb.Red *= scale;
@@ -349,7 +368,7 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
         rgb.Blue *= scale;
 
         var adjustedSaturation = ApplyVibrance(saturation, rgb);
-        adjustedSaturation = ApplySaturationRanges(adjustedSaturation, rgb, ranges, rangeCount);
+        adjustedSaturation = ApplySaturationRanges(adjustedSaturation, sourceRgb, ranges, rangeCount);
         rgb.Red = mappedLum + ((rgb.Red - mappedLum) * adjustedSaturation);
         rgb.Green = mappedLum + ((rgb.Green - mappedLum) * adjustedSaturation);
         rgb.Blue = mappedLum + ((rgb.Blue - mappedLum) * adjustedSaturation);
