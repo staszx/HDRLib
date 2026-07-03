@@ -26,13 +26,13 @@ public sealed class ImageAdjustSettings
     {
         return new PostProcessSettings
         {
-            Exposure = this.ExposureEV,
-            Brightness = this.Brightness,
-            Shadows = includeToneRegions ? this.Shadows : 1.0f,
-            Midtones = includeToneRegions ? this.Midtones : 1.0f,
-            Highlights = includeToneRegions ? this.HighlightCompression : 1.0f,
-            Contrast = this.Contrast * contrastMultiplier,
-            Vibrance = this.Saturation * vibranceMultiplier
+            Exposure = MathF.Max(0f, this.ExposureEV),
+            Brightness = MathF.Max(1f, this.Brightness),
+            Shadows = includeToneRegions ? MathF.Max(1f, this.Shadows) : 1.0f,
+            Midtones = includeToneRegions ? MathF.Max(1f, this.Midtones) : 1.0f,
+            Highlights = 1.0f,
+            Contrast = MathF.Max(1f, this.Contrast * contrastMultiplier),
+            Vibrance = MathF.Max(1f, this.Saturation * vibranceMultiplier)
         };
     }
 

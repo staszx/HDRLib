@@ -90,7 +90,8 @@ protected ToneMapperSettings Settings { get; }
             this.SourcePixelsBeforeProcessing = source;
         }
 
-        if (this.NormalizesInputRange)
+        var applyCore = this.ShouldApplyCore();
+        if (applyCore && this.NormalizesInputRange)
         {
             this.NormalizeInputRange(gpuPixels);
         }
@@ -110,12 +111,16 @@ protected ToneMapperSettings Settings { get; }
         }
 
         var effectiveSettings = this.BuildEffectiveSettings(gpuPixels);
-        this.ApplyInPlace(gpuPixels, effectiveSettings);
+        if (applyCore)
+        {
+            this.ApplyInPlace(gpuPixels, effectiveSettings);
+        }
+
         this.ApplyToneBoost(gpuPixels);
         this.dehazeProcessor.ApplyInPlace(gpuPixels, this.Settings.Dehaze);
         this.ApplyLocalContrast(gpuPixels, width, height, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
         this.ApplyColorTemperature(gpuPixels);
-        this.ApplyPostProcess(gpuPixels);
+        this.ApplyPostProcess(gpuPixels, includeCommonSettings: !applyCore);
         if (shouldBlend)
         {
             this.blendKernel((int)gpuPixels.Length, original, gpuPixels, Math.Clamp(this.Settings.Transparent, 0f, 100f) / 100f);
@@ -161,9 +166,17 @@ protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels,
             : 1f + (value / 50f);
     }
 
-    private void ApplyPostProcess(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels)
+    private bool ShouldApplyCore()
     {
-        var postProcessSettings = this.Settings.PostProcess;
+        return !this.Settings.IsCoreNeutral() ||
+               MathF.Abs(this.Settings.Gamma - 1f) > 1e-5f;
+    }
+
+    private void ApplyPostProcess(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, bool includeCommonSettings)
+    {
+        var postProcessSettings = includeCommonSettings
+            ? this.Settings.ToPostProcessSettings().Combine(this.Settings.PostProcess)
+            : this.Settings.PostProcess;
         if (this.Settings.AutoAdjustEnabled)
         {
             var auto = this.imageAnalyzer.Analyze(gpuPixels);

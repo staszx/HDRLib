@@ -49,8 +49,7 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
         var exposureCompensation = MathF.Pow(2f, this.settings.ExposureEV);
         if (this.settings.BypassToneCompressionForLdr &&
             whiteLum <= this.settings.LdrBypassWhitePointThreshold &&
-            maxLum <= this.settings.LdrBypassWhitePointThreshold &&
-            exposureCompensation * this.settings.Brightness <= 1f)
+            maxLum <= this.settings.LdrBypassWhitePointThreshold)
         {
             var ldrBrightnessCompensation = this.settings.AutoBrightnessCompensation
                 ? ComputeBrightnessCompensation(this.settings.OutputMidGray, logAverage * exposureCompensation)

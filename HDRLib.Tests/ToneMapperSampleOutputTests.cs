@@ -79,7 +79,6 @@ public class ToneMapperSampleOutputTests
     private static IEnumerable<TestCaseData> AllToneMappers()
     {
         yield return CreateTestCase(new AcesFilmicTonemapperSettings());
-        yield return CreateTestCase(new AutoAdjustTonemapperSettings());
         yield return CreateTestCase(new NaturalToneMapperSettings());
         yield return CreateTestCase(new ContrastBalancerToneMapperSettings());
         yield return CreateTestCase(new BrightnessBalancerToneMapperSettings());

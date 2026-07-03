@@ -262,13 +262,14 @@ public class HdrProcessingTests
                 Key = 0.32f,
                 Gamma = 1.2f
             }),
-            new ToneMapperCase("AutoAdjust", new AutoAdjustTonemapperSettings
+            new ToneMapperCase("NaturalAutoAdjust", new NaturalToneMapperSettings
             {
-                AdjustBrightness = true,
-                AdjustContrast = true,
-                AdjustSaturation = true,
-                TargetLuminance255 = 145f,
-                TargetContrastStdDev255 = 85f,
+                AutoAdjustEnabled = true,
+                TargetGray = 0.26f,
+                WhitePointPercentile = 0.98f,
+                OutputMidGray = 0.28f,
+                TonalRangeCompression = 3.5f,
+                BypassToneCompressionForLdr = false,
                 Gamma = 1.1f
             }),
             new ToneMapperCase("Natural", new NaturalToneMapperSettings

@@ -18,19 +18,29 @@ internal abstract class ToneMapperSIMD
 
     public void ApplyInPlace(Vector256<float>[][] pixels, int width, int height)
     {
-        if (this.NormalizesInputRange)
+        if (this.Settings.IsNeutral())
+        {
+            return;
+        }
+
+        var applyCore = this.ShouldApplyCore();
+        if (applyCore && this.NormalizesInputRange)
         {
             NormalizeInputRange(pixels, width * height);
         }
 
-        this.ApplyCoreInPlace(pixels, width, height);
+        if (applyCore)
+        {
+            this.ApplyCoreInPlace(pixels, width, height);
+        }
+
         if (!this.AppliesToneBoostInternally)
         {
             this.ApplyToneBoostInPlace(pixels);
         }
 
         DehazeProcessorSIMD.ApplyInPlace(pixels, this.Settings.Dehaze);
-        this.ApplyPostProcessInPlace(pixels);
+        this.ApplyPostProcessInPlace(pixels, includeCommonSettings: !applyCore);
     }
 
     internal void ApplyCoreOnlyInPlace(Vector256<float>[][] pixels, int width, int height)
@@ -68,6 +78,12 @@ internal abstract class ToneMapperSIMD
         return value <= 0f
             ? 1f + (value / 100f)
             : 1f + (value / 50f);
+    }
+
+    private bool ShouldApplyCore()
+    {
+        return !this.Settings.IsCoreNeutral() ||
+               MathF.Abs(this.Settings.Gamma - 1f) > 1e-5f;
     }
 
     private void ApplyToneBoostInPlace(Vector256<float>[][] pixels)
@@ -109,9 +125,11 @@ internal abstract class ToneMapperSIMD
         });
     }
 
-    private void ApplyPostProcessInPlace(Vector256<float>[][] pixels)
+    private void ApplyPostProcessInPlace(Vector256<float>[][] pixels, bool includeCommonSettings)
     {
-        var postProcessSettings = this.Settings.PostProcess;
+        var postProcessSettings = includeCommonSettings
+            ? this.Settings.ToPostProcessSettings().Combine(this.Settings.PostProcess)
+            : this.Settings.PostProcess;
         if (this.Settings.AutoAdjustEnabled)
         {
             var auto = ImageAnalyzerSIMD.Analyze(pixels);

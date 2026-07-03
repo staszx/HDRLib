@@ -29,11 +29,22 @@ public static class ToneMapperSettingsNeutrality
 
         return settings switch
         {
-            AcesFilmicTonemapperSettings aces => IsNeutral(aces),
-            AutoAdjustTonemapperSettings autoAdjust => IsNeutral(autoAdjust),
-            NaturalToneMapperSettings compressor => IsNeutral(compressor),
-            ContrastBalancerToneMapperSettings contrastOptimizer => IsNeutral(contrastOptimizer),
-            BrightnessBalancerToneMapperSettings toneBalancer => IsNeutral(toneBalancer),
+            AcesFilmicTonemapperSettings aces => IsCoreNeutral(aces),
+            NaturalToneMapperSettings compressor => IsCoreNeutral(compressor),
+            ContrastBalancerToneMapperSettings contrastOptimizer => IsCoreNeutral(contrastOptimizer),
+            BrightnessBalancerToneMapperSettings toneBalancer => IsCoreNeutral(toneBalancer),
+            _ => true
+        };
+    }
+
+    public static bool IsCoreNeutral(this ToneMapperSettings settings)
+    {
+        return settings switch
+        {
+            AcesFilmicTonemapperSettings aces => IsCoreNeutral(aces),
+            NaturalToneMapperSettings compressor => IsCoreNeutral(compressor),
+            ContrastBalancerToneMapperSettings contrastOptimizer => IsCoreNeutral(contrastOptimizer),
+            BrightnessBalancerToneMapperSettings toneBalancer => IsCoreNeutral(toneBalancer),
             _ => true
         };
     }
@@ -67,17 +78,6 @@ public static class ToneMapperSettingsNeutrality
             case AcesFilmicTonemapperSettings aces:
                 aces.Key = 0.18f;
                 break;
-            case AutoAdjustTonemapperSettings autoAdjust:
-                autoAdjust.AdjustBrightness = false;
-                autoAdjust.AdjustContrast = false;
-                autoAdjust.AdjustSaturation = false;
-                autoAdjust.TargetLuminance255 = 135f;
-                autoAdjust.TargetContrastStdDev255 = 100f;
-                autoAdjust.MaskStrengthScale = 1f;
-                autoAdjust.SaturationMin = 1f;
-                autoAdjust.SaturationMid = 1f;
-                autoAdjust.SaturationStrength = 1f;
-                break;
             case NaturalToneMapperSettings compressor:
                 compressor.TargetGray = 0.24f;
                 compressor.WhitePointPercentile = 1f;
@@ -107,7 +107,7 @@ public static class ToneMapperSettingsNeutrality
         return settings;
     }
 
-    private static bool IsNeutral(AcesFilmicTonemapperSettings settings)
+    private static bool IsCoreNeutral(AcesFilmicTonemapperSettings settings)
     {
         return MathF.Abs(settings.Key - 0.18f) <= Epsilon;
     }
@@ -118,24 +118,13 @@ public static class ToneMapperSettingsNeutrality
                MathF.Abs(colorTemperature - 6500f) <= Epsilon;
     }
 
-    private static bool IsNeutral(AutoAdjustTonemapperSettings settings)
-    {
-        return !settings.AdjustBrightness &&
-               !settings.AdjustContrast &&
-               !settings.AdjustSaturation &&
-               MathF.Abs(settings.MaskStrengthScale - 1f) <= Epsilon &&
-               MathF.Abs(settings.SaturationMin - 1f) <= Epsilon &&
-               MathF.Abs(settings.SaturationMid - 1f) <= Epsilon &&
-               MathF.Abs(settings.SaturationStrength - 1f) <= Epsilon;
-    }
-
-    private static bool IsNeutral(NaturalToneMapperSettings settings)
+    private static bool IsCoreNeutral(NaturalToneMapperSettings settings)
     {
         return !settings.AutoBrightnessCompensation &&
                settings.BypassToneCompressionForLdr;
     }
 
-    private static bool IsNeutral(ContrastBalancerToneMapperSettings settings)
+    private static bool IsCoreNeutral(ContrastBalancerToneMapperSettings settings)
     {
         return MathF.Abs(settings.Strength) <= Epsilon &&
                MathF.Abs(settings.ToneCompression - 1f) <= Epsilon &&
@@ -144,7 +133,7 @@ public static class ToneMapperSettingsNeutrality
                IsNeutralClip(settings);
     }
 
-    private static bool IsNeutral(BrightnessBalancerToneMapperSettings settings)
+    private static bool IsCoreNeutral(BrightnessBalancerToneMapperSettings settings)
     {
         return MathF.Abs(settings.Strength) <= Epsilon &&
                MathF.Abs(settings.Lighting - 1f) <= Epsilon &&

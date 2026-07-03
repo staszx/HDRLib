@@ -15,7 +15,6 @@ public static class ToneMapperFactory
         {
             AcesFilmicTonemapperSettings aces => new AcesFilmicToneMapper(aces),
             NaturalToneMapperSettings naturalSmart => new NaturalToneMapper(naturalSmart),
-            AutoAdjustTonemapperSettings autoAdjust => new AutoAdjustToneMapper(autoAdjust),
             ContrastBalancerToneMapperSettings contrastOptimizer => new ContrastBalancerToneMapper(contrastOptimizer),
             BrightnessBalancerToneMapperSettings toneBalancer => new BrightnessBalancerToneMapper(toneBalancer),
             _ => throw new ArgumentOutOfRangeException(nameof(settings), settings?.GetType().FullName, "Unknown tone mapper settings type")

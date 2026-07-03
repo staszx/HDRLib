@@ -14,7 +14,6 @@ internal static class ToneMapperFactoryGpu
         {
             AcesFilmicTonemapperSettings aces => new AcesFilmicToneMapperGpu(context, aces),
             NaturalToneMapperSettings naturalSmart => new NaturalToneMapperGpu(context, naturalSmart),
-            AutoAdjustTonemapperSettings autoAdjust => new AutoAdjustToneMapperGpu(context, autoAdjust),
             ContrastBalancerToneMapperSettings contrastOptimizer => new ContrastBalancerToneMapperGpu(context, contrastOptimizer),
             BrightnessBalancerToneMapperSettings toneBalancer => new BrightnessBalancerToneMapperGpu(context, toneBalancer),
             _ => throw new ArgumentOutOfRangeException(nameof(settings), settings?.GetType().FullName, "Unknown tone mapper settings type")

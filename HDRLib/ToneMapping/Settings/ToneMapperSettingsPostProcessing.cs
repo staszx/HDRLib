@@ -6,8 +6,6 @@ using HDRLib.PostProcessors;
 
 internal static class ToneMapperSettingsPostProcessing
 {
-    private const float AutoBrightnessCompensation = 1.10f;
-
     public static PostProcessSettings ToPostProcessSettings(this ToneMapperSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -34,8 +32,6 @@ internal static class ToneMapperSettingsPostProcessing
             includeToneRegions: true,
             contrastMultiplier: contrastMultiplier,
             vibranceMultiplier: vibranceMultiplier);
-        autoSettings.Brightness *= AutoBrightnessCompensation;
-
         return settings.Combine(autoSettings);
     }
 

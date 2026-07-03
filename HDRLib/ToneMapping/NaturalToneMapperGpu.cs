@@ -96,8 +96,7 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
         var logAverage = MathF.Exp((float)(logSum / pixelCount));
         if (this.settings.BypassToneCompressionForLdr &&
             whiteLum <= this.settings.LdrBypassWhitePointThreshold &&
-            maxLum <= this.settings.LdrBypassWhitePointThreshold &&
-            exposureCompensation * brightness <= 1f)
+            maxLum <= this.settings.LdrBypassWhitePointThreshold)
         {
             var ldrBrightnessCompensation = this.settings.AutoBrightnessCompensation
                 ? ComputeBrightnessCompensation(this.settings.OutputMidGray, logAverage * exposureCompensation)

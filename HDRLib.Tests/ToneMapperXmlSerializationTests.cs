@@ -138,7 +138,6 @@ public class ToneMapperXmlSerializationTests
     private static IEnumerable<TestCaseData> AllSettings()
     {
         yield return new TestCaseData(new AcesFilmicTonemapperSettings(), typeof(AcesFilmicToneMapper));
-        yield return new TestCaseData(new AutoAdjustTonemapperSettings(), typeof(AutoAdjustToneMapper));
         yield return new TestCaseData(new NaturalToneMapperSettings(), typeof(NaturalToneMapper));
         yield return new TestCaseData(new ContrastBalancerToneMapperSettings(), typeof(ContrastBalancerToneMapper));
         yield return new TestCaseData(new BrightnessBalancerToneMapperSettings(), typeof(BrightnessBalancerToneMapper));

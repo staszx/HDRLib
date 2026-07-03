@@ -15,7 +15,6 @@ public abstract class ToneMapperSettings
     private static readonly Type[] KnownTypes =
     [
         typeof(AcesFilmicTonemapperSettings),
-        typeof(AutoAdjustTonemapperSettings),
         typeof(NaturalToneMapperSettings),
         typeof(ContrastBalancerToneMapperSettings),
         typeof(BrightnessBalancerToneMapperSettings)

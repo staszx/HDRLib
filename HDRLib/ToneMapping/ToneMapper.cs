@@ -59,12 +59,17 @@ protected ToneMapper(ToneMapperSettings settings)
         }
 
         var effectiveSettings = this.BuildEffectiveSettings(image);
-        this.ApplyInPlace(image, effectiveSettings);
+        var applyCore = this.ShouldApplyCore();
+        if (applyCore)
+        {
+            this.ApplyInPlace(image, effectiveSettings);
+        }
+
         ToneBoostProcessor.ApplyInPlace(image.Pixels, this.Settings.ShadowsBoost, this.Settings.MidtonesBoost, this.Settings.HighlightsBoost);
         DehazeProcessor.ApplyInPlace(image, this.Settings.Dehaze);
         LocalContrastProcessor.ApplyInPlace(image, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
         this.ApplyColorTemperature(image);
-        this.ApplyPostProcess(image);
+        this.ApplyPostProcess(image, includeCommonSettings: !applyCore);
         ApplyBlending(image.Pixels, originalPixels, this.Settings.Transparent);
         this.SourcePixelsBeforeProcessing = null;
     }
@@ -152,6 +157,12 @@ protected void ApplyUsingSimd(Image<Rgb> image, Action<Vector256<float>[][], int
             effectiveGamma);
     }
 
+    private bool ShouldApplyCore()
+    {
+        return !this.Settings.IsCoreNeutral() ||
+               MathF.Abs(this.Settings.Gamma - 1f) > 1e-5f;
+    }
+
     /// <summary>
 /// Converts a saturation value in the range [-100, 100] to a multiplier used in processing.
 /// </summary>
@@ -165,9 +176,11 @@ protected static float SaturationToMultiplier(float saturation)
             : 1f + (value / 50f);
     }
 
-    private void ApplyPostProcess(Image<Rgb> image)
+    private void ApplyPostProcess(Image<Rgb> image, bool includeCommonSettings)
     {
-        var postProcessSettings = this.Settings.PostProcess;
+        var postProcessSettings = includeCommonSettings
+            ? this.Settings.ToPostProcessSettings().Combine(this.Settings.PostProcess)
+            : this.Settings.PostProcess;
         if (this.Settings.AutoAdjustEnabled)
         {
             var auto = ImageAnalyzer.Analyze(image.Pixels);

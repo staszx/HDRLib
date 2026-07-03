@@ -84,6 +84,12 @@ public sealed class SingleImageProcessor : IDisposable
         this.ProcessClassic(toneMapperSettings);
     }
 
+    public void Process(ToneMapperSettings toneMapperSettings, IImageProxy source)
+    {
+        this.LoadSource(source);
+        this.Process(toneMapperSettings);
+    }
+
     public void Dispose()
     {
         this.ReleaseGpuSource();
@@ -283,7 +289,7 @@ public sealed class SingleImageProcessor : IDisposable
 
         var toneMapper = ToneMapperFactorySIMD.Create(toneMapperSettings);
         toneMapper.ApplyInPlace(simdPixels, this.width, this.height);
-        if (toneMapperSettings is AcesFilmicTonemapperSettings or NaturalToneMapperSettings or AutoAdjustTonemapperSettings)
+        if (toneMapperSettings is AcesFilmicTonemapperSettings or NaturalToneMapperSettings)
         {
             var localContrastPixels = FromSimd(simdPixels, this.width * this.height);
             LocalContrastProcessor.ApplyInPlace(localContrastPixels, this.width, this.height, toneMapperSettings.LocalContrast, toneMapperSettings.LocalContrastRadius);
@@ -400,7 +406,6 @@ public sealed class SingleImageProcessor : IDisposable
     [
         typeof(AcesFilmicTonemapperSettings),
         typeof(NaturalToneMapperSettings),
-        typeof(AutoAdjustTonemapperSettings),
         typeof(ContrastBalancerToneMapperSettings),
         typeof(BrightnessBalancerToneMapperSettings)
     ];
