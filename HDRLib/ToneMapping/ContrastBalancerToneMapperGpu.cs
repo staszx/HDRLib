@@ -51,7 +51,7 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
                 pixelCount,
                 gpuPixels,
                 avgLum,
-                GetEffectiveStrength(this.settings, effectiveSettings),
+                GetBalanceStrength(this.settings, effectiveSettings),
                 XMath.Max(this.settings.ToneCompression, 1e-3f),
                 XMath.Max(this.settings.LightingEffect, 0f),
                 luminanceScale,
@@ -70,7 +70,7 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
                 gpuPixels,
                 this.SourcePixelsBeforeProcessing,
                 avgLum,
-                GetEffectiveStrength(this.settings, effectiveSettings),
+                GetBalanceStrength(this.settings, effectiveSettings),
                 XMath.Max(this.settings.ToneCompression, 1e-3f),
                 XMath.Max(this.settings.LightingEffect, 0f),
                 luminanceScale,
@@ -94,6 +94,25 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
 
     protected override bool PreservesSourceBeforeProcessing => this.settings.GetSaturationColorRanges().Length != 0;
 
+    private static float GetBalanceStrength(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
+    {
+        return HasActiveBalanceControls(settings, effectiveSettings)
+            ? Math.Clamp(settings.Strength, 0f, 1f)
+            : 0f;
+    }
+
+    private static bool HasActiveBalanceControls(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
+    {
+        return MathF.Abs(settings.ToneCompression - 1f) > Epsilon ||
+               MathF.Abs(settings.LightingEffect - 1f) > Epsilon ||
+               MathF.Abs(settings.Luminance - 1f) > Epsilon ||
+               MathF.Abs(settings.WhiteClip - ClippedToneMapperSettings.NeutralWhiteClip) > Epsilon ||
+               MathF.Abs(settings.BlackClip - ClippedToneMapperSettings.NeutralBlackClip) > Epsilon ||
+               MathF.Abs(effectiveSettings.ExposureEV) > Epsilon ||
+               MathF.Abs(effectiveSettings.Brightness - 1f) > Epsilon ||
+               MathF.Abs(effectiveSettings.Contrast - 1f) > Epsilon;
+    }
+
     private static float[] PackSaturationRanges(SaturationColorRange[] ranges)
     {
         var packed = new float[ranges.Length * 7];
@@ -110,29 +129,6 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
         }
 
         return packed;
-    }
-
-    private static float GetEffectiveStrength(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
-    {
-        var strength = Math.Clamp(settings.Strength, 0f, 1f);
-        if (strength > Epsilon)
-        {
-            return strength;
-        }
-
-        return HasActiveToneControls(settings, effectiveSettings) ? 1f : 0f;
-    }
-
-    private static bool HasActiveToneControls(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
-    {
-        return MathF.Abs(settings.ToneCompression - 1f) > Epsilon ||
-               MathF.Abs(settings.LightingEffect - 1f) > Epsilon ||
-               MathF.Abs(settings.Luminance - 1f) > Epsilon ||
-               MathF.Abs(settings.WhiteClip - ClippedToneMapperSettings.NeutralWhiteClip) > Epsilon ||
-               MathF.Abs(settings.BlackClip - ClippedToneMapperSettings.NeutralBlackClip) > Epsilon ||
-               MathF.Abs(effectiveSettings.ExposureEV) > Epsilon ||
-               MathF.Abs(effectiveSettings.Brightness - 1f) > Epsilon ||
-               MathF.Abs(effectiveSettings.Contrast - 1f) > Epsilon;
     }
 
     private static void LogSumKernel(Index1D index, ArrayView1D<Rgb, Stride1D.Dense> pixels, ArrayView1D<float, Stride1D.Dense> sum)

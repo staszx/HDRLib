@@ -80,6 +80,23 @@ public class ContrastBalancerToneMapperTests
     }
 
     [Test]
+    public void ApplyInPlace_StrengthZeroIgnoresCoreControls()
+    {
+        var source = CreateSampleImage();
+        var settings = new ContrastBalancerToneMapperSettings().MakeNeutral();
+        settings.Strength = 0f;
+        settings.Luminance = 2.0f;
+        settings.ToneCompression = 0.2f;
+        settings.LightingEffect = 0.0f;
+        settings.WhiteClip = 0.5f;
+        settings.BlackClip = 0.2f;
+
+        var result = ApplyCpu(settings, Clone(source));
+
+        AssertImagesClose(source, result, 1e-6f);
+    }
+
+    [Test]
     public void ApplyInPlace_WhiteClipChangesOutput()
     {
         var lowClip = ApplyCpu(CreateSettings(luminance: 1.0f, toneCompression: 0.6f, lightingEffect: 1.0f, whiteClip: 0.5f), CreateSampleImage());
@@ -239,6 +256,24 @@ public class ContrastBalancerToneMapperTests
         var result = ApplyGpu(context, settings, Clone(source));
 
         Assert.That(MeanAbsoluteDifference(source, result), Is.GreaterThan(0.05f));
+    }
+
+    [Test]
+    public void ApplyInPlaceGpu_StrengthZeroIgnoresCoreControls()
+    {
+        using var context = CreateGpuContextOrSkip();
+        var source = CreateSampleImage();
+        var settings = new ContrastBalancerToneMapperSettings().MakeNeutral();
+        settings.Strength = 0f;
+        settings.Luminance = 2.0f;
+        settings.ToneCompression = 0.2f;
+        settings.LightingEffect = 0.0f;
+        settings.WhiteClip = 0.5f;
+        settings.BlackClip = 0.2f;
+
+        var result = ApplyGpu(context, settings, Clone(source));
+
+        AssertImagesClose(source, result, 1e-6f);
     }
 
     [Test]

@@ -24,9 +24,10 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
         var luminance = ToneMapperSIMDHelper.BuildLuminance(pixels[0], pixels[1], pixels[2], pixelCount);
         var avgLum = LogAverageClamped(luminance);
 
-        var strength = Vector256.Create(GetEffectiveStrength(this.settings));
+        var strength = Vector256.Create(Math.Clamp(this.settings.Strength, 0f, 1f));
         var lighting = Vector256.Create(MathF.Max(0f, this.settings.Lighting));
         var brightnessBoost = Vector256.Create(MathF.Max(0f, this.settings.BrightnessBoost) * MathF.Max(this.Settings.Brightness, 0f));
+        var hasBalanceControls = HasActiveBalanceControls(this.settings);
         var blackClipValue = Math.Clamp(this.settings.BlackClip, 0f, 0.99f);
         var whiteClipValue = Math.Clamp(this.settings.WhiteClip, blackClipValue + 1e-3f, 4f);
         var blackClip = Vector256.Create(blackClipValue);
@@ -52,9 +53,12 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
             var normalizedLum = Avx.Divide(exposedLum, Avx.Add(ToneMapperSIMDHelper.One, exposedLum));
             var litLum = Avx.Add(avg, Avx.Multiply(Avx.Subtract(normalizedLum, avg), lighting));
 
-            var clippedLum = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(Avx.Subtract(litLum, blackClip), invClipRange));
-            clippedLum = ToneMapperSIMDHelper.Clamp01(Avx.Add(Avx.Multiply(Avx.Subtract(clippedLum, half), contrast), half));
-            clippedLum = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(clippedLum, brightnessBoost));
+            var balancedLum = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(Avx.Subtract(litLum, blackClip), invClipRange));
+            balancedLum = ToneMapperSIMDHelper.Clamp01(Avx.Add(Avx.Multiply(Avx.Subtract(balancedLum, half), contrast), half));
+
+            var clippedLum = hasBalanceControls
+                ? ToneMapperSIMDHelper.Clamp01(Avx.Multiply(balancedLum, brightnessBoost))
+                : ToneMapperSIMDHelper.Clamp01(Avx.Multiply(sourceLum, brightnessBoost));
 
             var mappedLum = Avx.Add(sourceLum, Avx.Multiply(Avx.Subtract(clippedLum, sourceLum), strength));
             var scale = Avx.Divide(mappedLum, sourceLum);
@@ -106,21 +110,9 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
         return MathF.Exp(sum / luminance.Length);
     }
 
-    private static float GetEffectiveStrength(BrightnessBalancerToneMapperSettings settings)
-    {
-        var strength = Math.Clamp(settings.Strength, 0f, 1f);
-        if (strength > Epsilon)
-        {
-            return strength;
-        }
-
-        return HasActiveToneControls(settings) ? 1f : 0f;
-    }
-
-    private static bool HasActiveToneControls(BrightnessBalancerToneMapperSettings settings)
+    private static bool HasActiveBalanceControls(BrightnessBalancerToneMapperSettings settings)
     {
         return MathF.Abs(settings.Lighting - 1f) > Epsilon ||
-               MathF.Abs(settings.BrightnessBoost - 1f) > Epsilon ||
                MathF.Abs(settings.WhiteClip - ClippedToneMapperSettings.NeutralWhiteClip) > Epsilon ||
                MathF.Abs(settings.BlackClip - ClippedToneMapperSettings.NeutralBlackClip) > Epsilon;
     }

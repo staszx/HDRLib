@@ -48,34 +48,51 @@ internal sealed class AcesFilmicToneMapper : ToneMapper
         }
 
         var pixels = image.Pixels;
-        var exposureAuto = ToneMapperUtilities.ComputeAutoExposure(pixels, AcesConstants.ExposureDelta, AcesConstants.ExposureEpsilon) * (this.Key / DefaultKey);
+        var neutralExposureAuto = ToneMapperUtilities.ComputeAutoExposure(pixels, AcesConstants.ExposureDelta, AcesConstants.ExposureEpsilon);
         var exposureManual = MathF.Pow(2.0f, effectiveSettings.ExposureEV);
-        var exposure = exposureAuto * exposureManual;
+        var neutralExposure = neutralExposureAuto * exposureManual;
+        var exposure = neutralExposure * (this.Key / DefaultKey);
 
-        this.BrightnessContrast(pixels, (int)image.Length, exposure, effectiveSettings.Brightness, effectiveSettings.Contrast, effectiveSettings.Saturation);
+        this.BrightnessContrast(pixels, (int)image.Length, exposure, neutralExposure, effectiveSettings.Brightness, effectiveSettings.Contrast, effectiveSettings.Saturation);
         ToneMapperUtilities.ApplyGamma(pixels, effectiveSettings.Gamma);
     }
 
-    private void BrightnessContrast(Rgb[] pixels, int length, float exposure, float brightness, float contrast, float saturation)
+    private void BrightnessContrast(Rgb[] pixels, int length, float exposure, float neutralExposure, float brightness, float contrast, float saturation)
     {
         Parallel.For(0, length, i =>
         {
             var p = pixels[i];
-            var r = p.Red * exposure;
-            var g = p.Green * exposure;
-            var b = p.Blue * exposure;
+            var sourceR = p.Red;
+            var sourceG = p.Green;
+            var sourceB = p.Blue;
+            var r = sourceR * exposure;
+            var g = sourceG * exposure;
+            var b = sourceB * exposure;
+            var neutralR = sourceR * neutralExposure;
+            var neutralG = sourceG * neutralExposure;
+            var neutralB = sourceB * neutralExposure;
 
-            var acesR = (r * AcesConstants.Input00) + (g * AcesConstants.Input01) + (b * AcesConstants.Input02);
-            var acesG = (r * AcesConstants.Input10) + (g * AcesConstants.Input11) + (b * AcesConstants.Input12);
-            var acesB = (r * AcesConstants.Input20) + (g * AcesConstants.Input21) + (b * AcesConstants.Input22);
+            var acesR = MapAcesChannel(r, g, b, AcesConstants.Input00, AcesConstants.Input01, AcesConstants.Input02);
+            var acesG = MapAcesChannel(r, g, b, AcesConstants.Input10, AcesConstants.Input11, AcesConstants.Input12);
+            var acesB = MapAcesChannel(r, g, b, AcesConstants.Input20, AcesConstants.Input21, AcesConstants.Input22);
+            var neutralAcesR = MapAcesChannel(neutralR, neutralG, neutralB, AcesConstants.Input00, AcesConstants.Input01, AcesConstants.Input02);
+            var neutralAcesG = MapAcesChannel(neutralR, neutralG, neutralB, AcesConstants.Input10, AcesConstants.Input11, AcesConstants.Input12);
+            var neutralAcesB = MapAcesChannel(neutralR, neutralG, neutralB, AcesConstants.Input20, AcesConstants.Input21, AcesConstants.Input22);
 
-            acesR = ToneMapperUtilities.AcesFitted(acesR);
-            acesG = ToneMapperUtilities.AcesFitted(acesG);
-            acesB = ToneMapperUtilities.AcesFitted(acesB);
+            var mappedR = MapOutputChannel(acesR, acesG, acesB, AcesConstants.Output00, AcesConstants.Output01, AcesConstants.Output02);
+            var mappedG = MapOutputChannel(acesR, acesG, acesB, AcesConstants.Output10, AcesConstants.Output11, AcesConstants.Output12);
+            var mappedB = MapOutputChannel(acesR, acesG, acesB, AcesConstants.Output20, AcesConstants.Output21, AcesConstants.Output22);
+            var neutralMappedR = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, AcesConstants.Output00, AcesConstants.Output01, AcesConstants.Output02);
+            var neutralMappedG = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, AcesConstants.Output10, AcesConstants.Output11, AcesConstants.Output12);
+            var neutralMappedB = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, AcesConstants.Output20, AcesConstants.Output21, AcesConstants.Output22);
 
-            r = ((acesR * AcesConstants.Output00) + (acesG * AcesConstants.Output01) + (acesB * AcesConstants.Output02)) * brightness;
-            g = ((acesR * AcesConstants.Output10) + (acesG * AcesConstants.Output11) + (acesB * AcesConstants.Output12)) * brightness;
-            b = ((acesR * AcesConstants.Output20) + (acesG * AcesConstants.Output21) + (acesB * AcesConstants.Output22)) * brightness;
+            r = sourceR + (mappedR - neutralMappedR);
+            g = sourceG + (mappedG - neutralMappedG);
+            b = sourceB + (mappedB - neutralMappedB);
+
+            r *= brightness;
+            g *= brightness;
+            b *= brightness;
 
             r = ToneMapperUtilities.AdjustContrast(r, contrast);
             g = ToneMapperUtilities.AdjustContrast(g, contrast);
@@ -94,6 +111,16 @@ internal sealed class AcesFilmicToneMapper : ToneMapper
                 Math.Clamp(g, AcesConstants.ChannelMin, AcesConstants.ChannelMax),
                 Math.Clamp(b, AcesConstants.ChannelMin, AcesConstants.ChannelMax));
         });
+    }
+
+    private static float MapAcesChannel(float r, float g, float b, float inputR, float inputG, float inputB)
+    {
+        return ToneMapperUtilities.AcesFitted((r * inputR) + (g * inputG) + (b * inputB));
+    }
+
+    private static float MapOutputChannel(float acesR, float acesG, float acesB, float outputR, float outputG, float outputB)
+    {
+        return (acesR * outputR) + (acesG * outputG) + (acesB * outputB);
     }
 
     #endregion

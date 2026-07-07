@@ -39,7 +39,7 @@ internal sealed class ContrastBalancerToneMapper : ToneMapper
         }
 
         var avgLum = MathF.Exp(logSum / count);
-        var strength = GetEffectiveStrength(this.settings, effectiveSettings);
+        var strength = GetBalanceStrength(this.settings, effectiveSettings);
         var toneCompression = MathF.Max(this.settings.ToneCompression, 1e-3f);
         var lightingEffect = Math.Max(0f, this.settings.LightingEffect);
         var luminanceScale = Math.Max(0f, this.settings.Luminance) * MathF.Pow(2f, effectiveSettings.ExposureEV);
@@ -80,18 +80,14 @@ internal sealed class ContrastBalancerToneMapper : ToneMapper
 
     protected override bool PreservesSourceBeforeProcessing => this.settings.GetSaturationColorRanges().Length != 0;
 
-    private static float GetEffectiveStrength(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
+    private static float GetBalanceStrength(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
     {
-        var strength = Math.Clamp(settings.Strength, 0f, 1f);
-        if (strength > Epsilon)
-        {
-            return strength;
-        }
-
-        return HasActiveToneControls(settings, effectiveSettings) ? 1f : 0f;
+        return HasActiveBalanceControls(settings, effectiveSettings)
+            ? Math.Clamp(settings.Strength, 0f, 1f)
+            : 0f;
     }
 
-    private static bool HasActiveToneControls(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
+    private static bool HasActiveBalanceControls(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
     {
         return MathF.Abs(settings.ToneCompression - 1f) > Epsilon ||
                MathF.Abs(settings.LightingEffect - 1f) > Epsilon ||

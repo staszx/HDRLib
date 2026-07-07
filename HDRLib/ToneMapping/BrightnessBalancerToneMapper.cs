@@ -37,9 +37,10 @@ internal sealed class BrightnessBalancerToneMapper : ToneMapper
         }
 
         var avgLum = MathF.Exp(logSum / count);
-        var strength = GetEffectiveStrength(this.settings);
+        var strength = Math.Clamp(this.settings.Strength, 0f, 1f);
         var lighting = MathF.Max(0f, this.settings.Lighting);
         var brightnessBoost = MathF.Max(0f, this.settings.BrightnessBoost) * MathF.Max(effectiveSettings.Brightness, 0f);
+        var hasBalanceControls = HasActiveBalanceControls(this.settings);
         var blackClip = Math.Clamp(this.settings.BlackClip, 0f, 0.99f);
         var whiteClip = Math.Clamp(this.settings.WhiteClip, blackClip + 1e-3f, 4f);
         var invClipRange = 1f / (whiteClip - blackClip);
@@ -55,9 +56,12 @@ internal sealed class BrightnessBalancerToneMapper : ToneMapper
             var normalizedLum = exposedLum / (1f + exposedLum);
             var litLum = avgLum + ((normalizedLum - avgLum) * lighting);
 
-            var clippedLum = Math.Clamp((litLum - blackClip) * invClipRange, 0f, 1f);
-            clippedLum = Math.Clamp(((clippedLum - 0.5f) * contrast) + 0.5f, 0f, 1f);
-            clippedLum = Math.Clamp(clippedLum * brightnessBoost, 0f, 1f);
+            var balancedLum = Math.Clamp((litLum - blackClip) * invClipRange, 0f, 1f);
+            balancedLum = Math.Clamp(((balancedLum - 0.5f) * contrast) + 0.5f, 0f, 1f);
+
+            var clippedLum = hasBalanceControls
+                ? Math.Clamp(balancedLum * brightnessBoost, 0f, 1f)
+                : Math.Clamp(sourceLum * brightnessBoost, 0f, 1f);
 
             var mappedLum = sourceLum + ((clippedLum - sourceLum) * strength);
             var scale = mappedLum / sourceLum;
@@ -77,21 +81,9 @@ internal sealed class BrightnessBalancerToneMapper : ToneMapper
         ApplyGamma(pixels, count, effectiveSettings.Gamma);
     }
 
-    private static float GetEffectiveStrength(BrightnessBalancerToneMapperSettings settings)
-    {
-        var strength = Math.Clamp(settings.Strength, 0f, 1f);
-        if (strength > Epsilon)
-        {
-            return strength;
-        }
-
-        return HasActiveToneControls(settings) ? 1f : 0f;
-    }
-
-    private static bool HasActiveToneControls(BrightnessBalancerToneMapperSettings settings)
+    private static bool HasActiveBalanceControls(BrightnessBalancerToneMapperSettings settings)
     {
         return MathF.Abs(settings.Lighting - 1f) > Epsilon ||
-               MathF.Abs(settings.BrightnessBoost - 1f) > Epsilon ||
                MathF.Abs(settings.WhiteClip - ClippedToneMapperSettings.NeutralWhiteClip) > Epsilon ||
                MathF.Abs(settings.BlackClip - ClippedToneMapperSettings.NeutralBlackClip) > Epsilon;
     }

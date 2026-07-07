@@ -24,7 +24,7 @@ internal sealed class ContrastBalancerToneMapperSIMD : ToneMapperSIMD
         var luminance = ToneMapperSIMDHelper.BuildLuminance(pixels[0], pixels[1], pixels[2], pixelCount);
         var avgLum = LogAverageClamped(luminance);
 
-        var strength = Vector256.Create(GetEffectiveStrength(this.settings));
+        var strength = Vector256.Create(GetBalanceStrength(this.settings));
         var toneCompression = Vector256.Create(MathF.Max(this.settings.ToneCompression, 1e-3f));
         var lightingEffect = Vector256.Create(Math.Max(0f, this.settings.LightingEffect));
         var luminanceScale = Vector256.Create(Math.Max(0f, this.settings.Luminance) * MathF.Pow(2f, this.Settings.ExposureEV));
@@ -106,18 +106,14 @@ internal sealed class ContrastBalancerToneMapperSIMD : ToneMapperSIMD
         return MathF.Exp(sum / luminance.Length);
     }
 
-    private static float GetEffectiveStrength(ContrastBalancerToneMapperSettings settings)
+    private static float GetBalanceStrength(ContrastBalancerToneMapperSettings settings)
     {
-        var strength = Math.Clamp(settings.Strength, 0f, 1f);
-        if (strength > Epsilon)
-        {
-            return strength;
-        }
-
-        return HasActiveToneControls(settings) ? 1f : 0f;
+        return HasActiveBalanceControls(settings)
+            ? Math.Clamp(settings.Strength, 0f, 1f)
+            : 0f;
     }
 
-    private static bool HasActiveToneControls(ContrastBalancerToneMapperSettings settings)
+    private static bool HasActiveBalanceControls(ContrastBalancerToneMapperSettings settings)
     {
         return MathF.Abs(settings.ToneCompression - 1f) > Epsilon ||
                MathF.Abs(settings.LightingEffect - 1f) > Epsilon ||
@@ -128,4 +124,5 @@ internal sealed class ContrastBalancerToneMapperSIMD : ToneMapperSIMD
                MathF.Abs(settings.Brightness - 1f) > Epsilon ||
                MathF.Abs(settings.Contrast - 1f) > Epsilon;
     }
+
 }

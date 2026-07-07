@@ -8,6 +8,8 @@ using Settings;
 
 internal sealed class AcesFilmicToneMapperSIMD : ToneMapperSIMD
 {
+    private const float DefaultKey = 0.18f;
+
     private static readonly Vector256<float> Input00 = Vector256.Create(AcesConstants.Input00);
     private static readonly Vector256<float> Input01 = Vector256.Create(AcesConstants.Input01);
     private static readonly Vector256<float> Input02 = Vector256.Create(AcesConstants.Input02);
@@ -58,8 +60,10 @@ internal sealed class AcesFilmicToneMapperSIMD : ToneMapperSIMD
         var count = width * height;
         var lum = ToneMapperSIMDHelper.BuildLuminance(pixels[0], pixels[1], pixels[2], count);
         var avg = LogAverageExact(lum);
-        var exposureAuto = this.Key / (avg + AcesConstants.ExposureEpsilon);
-        var exposure = Vector256.Create(exposureAuto * MathF.Pow(2f, this.ExposureEV));
+        var neutralExposureAuto = DefaultKey / (avg + AcesConstants.ExposureEpsilon);
+        var exposureManual = MathF.Pow(2f, this.ExposureEV);
+        var neutralExposure = Vector256.Create(neutralExposureAuto * exposureManual);
+        var exposure = Vector256.Create(neutralExposureAuto * (this.Key / DefaultKey) * exposureManual);
         var brightness = Vector256.Create(this.Brightness);
         var contrast = Vector256.Create(this.Contrast);
         var saturation = Vector256.Create(this.Saturation);
@@ -67,21 +71,37 @@ internal sealed class AcesFilmicToneMapperSIMD : ToneMapperSIMD
 
         Parallel.For(0, pixels[0].Length, i =>
         {
-            var r = Avx.Multiply(pixels[0][i], exposure);
-            var g = Avx.Multiply(pixels[1][i], exposure);
-            var b = Avx.Multiply(pixels[2][i], exposure);
+            var sourceR = pixels[0][i];
+            var sourceG = pixels[1][i];
+            var sourceB = pixels[2][i];
+            var r = Avx.Multiply(sourceR, exposure);
+            var g = Avx.Multiply(sourceG, exposure);
+            var b = Avx.Multiply(sourceB, exposure);
+            var neutralR = Avx.Multiply(sourceR, neutralExposure);
+            var neutralG = Avx.Multiply(sourceG, neutralExposure);
+            var neutralB = Avx.Multiply(sourceB, neutralExposure);
 
-            var acesR = Avx.Add(Avx.Add(Avx.Multiply(r, Input00), Avx.Multiply(g, Input01)), Avx.Multiply(b, Input02));
-            var acesG = Avx.Add(Avx.Add(Avx.Multiply(r, Input10), Avx.Multiply(g, Input11)), Avx.Multiply(b, Input12));
-            var acesB = Avx.Add(Avx.Add(Avx.Multiply(r, Input20), Avx.Multiply(g, Input21)), Avx.Multiply(b, Input22));
+            var acesR = MapAcesChannel(r, g, b, Input00, Input01, Input02);
+            var acesG = MapAcesChannel(r, g, b, Input10, Input11, Input12);
+            var acesB = MapAcesChannel(r, g, b, Input20, Input21, Input22);
+            var neutralAcesR = MapAcesChannel(neutralR, neutralG, neutralB, Input00, Input01, Input02);
+            var neutralAcesG = MapAcesChannel(neutralR, neutralG, neutralB, Input10, Input11, Input12);
+            var neutralAcesB = MapAcesChannel(neutralR, neutralG, neutralB, Input20, Input21, Input22);
 
-            acesR = ApplyAcesFitted(acesR);
-            acesG = ApplyAcesFitted(acesG);
-            acesB = ApplyAcesFitted(acesB);
+            var mappedR = MapOutputChannel(acesR, acesG, acesB, Output00, Output01, Output02);
+            var mappedG = MapOutputChannel(acesR, acesG, acesB, Output10, Output11, Output12);
+            var mappedB = MapOutputChannel(acesR, acesG, acesB, Output20, Output21, Output22);
+            var neutralMappedR = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, Output00, Output01, Output02);
+            var neutralMappedG = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, Output10, Output11, Output12);
+            var neutralMappedB = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, Output20, Output21, Output22);
 
-            r = Avx.Multiply(Avx.Add(Avx.Add(Avx.Multiply(acesR, Output00), Avx.Multiply(acesG, Output01)), Avx.Multiply(acesB, Output02)), brightness);
-            g = Avx.Multiply(Avx.Add(Avx.Add(Avx.Multiply(acesR, Output10), Avx.Multiply(acesG, Output11)), Avx.Multiply(acesB, Output12)), brightness);
-            b = Avx.Multiply(Avx.Add(Avx.Add(Avx.Multiply(acesR, Output20), Avx.Multiply(acesG, Output21)), Avx.Multiply(acesB, Output22)), brightness);
+            r = Avx.Add(sourceR, Avx.Subtract(mappedR, neutralMappedR));
+            g = Avx.Add(sourceG, Avx.Subtract(mappedG, neutralMappedG));
+            b = Avx.Add(sourceB, Avx.Subtract(mappedB, neutralMappedB));
+
+            r = Avx.Multiply(r, brightness);
+            g = Avx.Multiply(g, brightness);
+            b = Avx.Multiply(b, brightness);
 
             var pivot = Vector256.Create(AcesConstants.ContrastPivot);
             r = Avx.Add(Avx.Multiply(Avx.Subtract(r, pivot), contrast), pivot);
@@ -110,6 +130,16 @@ internal sealed class AcesFilmicToneMapperSIMD : ToneMapperSIMD
         var numerator = Avx.Subtract(Avx.Multiply(x, Avx.Add(x, FitA)), FitB);
         var denominator = Avx.Add(Avx.Multiply(x, Avx.Add(Avx.Multiply(FitC, x), FitD)), FitE);
         return Avx.Max(ToneMapperSIMDHelper.Zero, Avx.Divide(numerator, denominator));
+    }
+
+    private static Vector256<float> MapAcesChannel(Vector256<float> r, Vector256<float> g, Vector256<float> b, Vector256<float> inputR, Vector256<float> inputG, Vector256<float> inputB)
+    {
+        return ApplyAcesFitted(Avx.Add(Avx.Add(Avx.Multiply(r, inputR), Avx.Multiply(g, inputG)), Avx.Multiply(b, inputB)));
+    }
+
+    private static Vector256<float> MapOutputChannel(Vector256<float> acesR, Vector256<float> acesG, Vector256<float> acesB, Vector256<float> outputR, Vector256<float> outputG, Vector256<float> outputB)
+    {
+        return Avx.Add(Avx.Add(Avx.Multiply(acesR, outputR), Avx.Multiply(acesG, outputG)), Avx.Multiply(acesB, outputB));
     }
 
     private static float LogAverageExact(float[] luminance)

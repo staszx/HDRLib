@@ -12,11 +12,68 @@ public class AcesFilmicToneMapperTests
     private const float Tolerance = 3e-5f;
 
     [Test]
+    public void DefaultSettings_AreNeutral()
+    {
+        var settings = new AcesFilmicTonemapperSettings().MakeNeutral();
+
+        Assert.That(settings.IsNeutral(), Is.True);
+    }
+
+    [Test]
+    public void ApplyInPlace_DefaultSettingsKeepOriginalPixel()
+    {
+        var settings = new AcesFilmicTonemapperSettings().MakeNeutral();
+        var toneMapper = ToneMapperFactory.Create(settings);
+        var image = new Image<Rgb>(1, 1)
+        {
+            Pixels = [new Rgb(4.0f, 1.0f, 0.25f)]
+        };
+        var original = image.Pixels[0];
+
+        toneMapper.ApplyInPlace(image);
+
+        Assert.That(MeanAbsoluteDifference(original, image.Pixels[0]), Is.EqualTo(0f).Within(Tolerance));
+    }
+
+    [Test]
+    public void ApplyInPlace_KeyNearNeutralChangesSmoothly()
+    {
+        var original = new Image<Rgb>(1, 1)
+        {
+            Pixels = [new Rgb(0.45f, 0.32f, 0.2f)]
+        };
+        var slightlyDarker = Clone(original);
+        var slightlyBrighter = Clone(original);
+        var strongerBrighter = Clone(original);
+
+        ToneMapperFactory.Create(new AcesFilmicTonemapperSettings().MakeNeutral()).ApplyInPlace(original);
+        ToneMapperFactory.Create(new AcesFilmicTonemapperSettings { Key = 0.1715f, Gamma = 1f }).ApplyInPlace(slightlyDarker);
+        ToneMapperFactory.Create(new AcesFilmicTonemapperSettings { Key = 0.196f, Gamma = 1f }).ApplyInPlace(slightlyBrighter);
+        ToneMapperFactory.Create(new AcesFilmicTonemapperSettings { Key = 0.34f, Gamma = 1f }).ApplyInPlace(strongerBrighter);
+
+        var darkerDelta = MeanAbsoluteDifference(original.Pixels[0], slightlyDarker.Pixels[0]);
+        var brighterDelta = MeanAbsoluteDifference(original.Pixels[0], slightlyBrighter.Pixels[0]);
+        var strongerDelta = MeanAbsoluteDifference(original.Pixels[0], strongerBrighter.Pixels[0]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(darkerDelta, Is.GreaterThan(0f));
+            Assert.That(darkerDelta, Is.LessThan(0.05f));
+            Assert.That(brighterDelta, Is.GreaterThan(0f));
+            Assert.That(brighterDelta, Is.LessThan(0.05f));
+            Assert.That(strongerDelta, Is.GreaterThan(brighterDelta));
+            Assert.That(slightlyDarker.Pixels[0].Light(), Is.LessThan(original.Pixels[0].Light()));
+            Assert.That(slightlyBrighter.Pixels[0].Light(), Is.GreaterThan(original.Pixels[0].Light()));
+            Assert.That(strongerBrighter.Pixels[0].Light(), Is.GreaterThan(slightlyBrighter.Pixels[0].Light()));
+        });
+    }
+
+    [Test]
     public void ApplyInPlace_MatchesAcesFittedReferenceForSaturatedPixel()
     {
         var settings = new AcesFilmicTonemapperSettings
         {
-            Key = 0.18f,
+            Key = 0.5f,
             ExposureEV = 0.0f,
             Brightness = 1.0f,
             Contrast = 1.0f,
@@ -45,7 +102,7 @@ public class AcesFilmicToneMapperTests
     {
         var settings = new AcesFilmicTonemapperSettings
         {
-            Key = 0.18f,
+            Key = 0.5f,
             ExposureEV = 0.0f,
             Brightness = 1.0f,
             Contrast = 1.0f,
@@ -69,7 +126,23 @@ public class AcesFilmicToneMapperTests
 
     private static Rgb ReferenceToneMap(Rgb input, float key, float gamma)
     {
-        var exposure = key / (input.Light() + 1e-9f);
+        var neutralExposure = 0.18f / (input.Light() + 1e-9f);
+        var mapped = MapAces(input, neutralExposure * (key / 0.18f));
+        var neutralMapped = MapAces(input, neutralExposure);
+        mapped = new Rgb(
+            input.Red + (mapped.Red - neutralMapped.Red),
+            input.Green + (mapped.Green - neutralMapped.Green),
+            input.Blue + (mapped.Blue - neutralMapped.Blue));
+
+        var invGamma = 1.0f / MathF.Max(gamma, 0.1f);
+        return new Rgb(
+            MathF.Pow(Math.Clamp(mapped.Red, 0f, 1f), invGamma),
+            MathF.Pow(Math.Clamp(mapped.Green, 0f, 1f), invGamma),
+            MathF.Pow(Math.Clamp(mapped.Blue, 0f, 1f), invGamma));
+    }
+
+    private static Rgb MapAces(Rgb input, float exposure)
+    {
         var r = input.Red * exposure;
         var g = input.Green * exposure;
         var b = input.Blue * exposure;
@@ -82,16 +155,25 @@ public class AcesFilmicToneMapperTests
         acesG = Fitted(acesG);
         acesB = Fitted(acesB);
 
-        var mapped = new Rgb(
+        return new Rgb(
             Math.Clamp((acesR * 1.60475f) + (acesG * -0.53108f) + (acesB * -0.07367f), 0.0f, 1.0f),
             Math.Clamp((acesR * -0.10208f) + (acesG * 1.10813f) + (acesB * -0.00605f), 0.0f, 1.0f),
             Math.Clamp((acesR * -0.00327f) + (acesG * -0.07276f) + (acesB * 1.07602f), 0.0f, 1.0f));
+    }
 
-        var invGamma = 1.0f / MathF.Max(gamma, 0.1f);
-        return new Rgb(
-            MathF.Pow(mapped.Red, invGamma),
-            MathF.Pow(mapped.Green, invGamma),
-            MathF.Pow(mapped.Blue, invGamma));
+    private static Image<Rgb> Clone(Image<Rgb> image)
+    {
+        return new Image<Rgb>(image.Width, image.Height)
+        {
+            Pixels = (Rgb[])image.Pixels.Clone()
+        };
+    }
+
+    private static float MeanAbsoluteDifference(Rgb expected, Rgb actual)
+    {
+        return (MathF.Abs(expected.Red - actual.Red) +
+                MathF.Abs(expected.Green - actual.Green) +
+                MathF.Abs(expected.Blue - actual.Blue)) / 3f;
     }
 
     private static float Fitted(float value)

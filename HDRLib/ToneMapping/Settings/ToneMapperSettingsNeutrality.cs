@@ -88,7 +88,7 @@ public static class ToneMapperSettingsNeutrality
                 compressor.TonalRangeCompression = 4f;
                 break;
             case ContrastBalancerToneMapperSettings contrastOptimizer:
-                contrastOptimizer.Strength = 0f;
+                contrastOptimizer.Strength = 1f;
                 contrastOptimizer.ToneCompression = 1f;
                 contrastOptimizer.LightingEffect = 1f;
                 contrastOptimizer.Luminance = 1f;
@@ -96,7 +96,7 @@ public static class ToneMapperSettingsNeutrality
                 contrastOptimizer.BlackClip = 0f;
                 break;
             case BrightnessBalancerToneMapperSettings toneBalancer:
-                toneBalancer.Strength = 0f;
+                toneBalancer.Strength = 1f;
                 toneBalancer.Lighting = 1f;
                 toneBalancer.BrightnessBoost = 1f;
                 toneBalancer.WhiteClip = 1f;
@@ -126,16 +126,17 @@ public static class ToneMapperSettingsNeutrality
 
     private static bool IsCoreNeutral(ContrastBalancerToneMapperSettings settings)
     {
-        return MathF.Abs(settings.Strength) <= Epsilon &&
+        return MathF.Abs(settings.Strength) <= Epsilon ||
                MathF.Abs(settings.ToneCompression - 1f) <= Epsilon &&
                MathF.Abs(settings.LightingEffect - 1f) <= Epsilon &&
                MathF.Abs(settings.Luminance - 1f) <= Epsilon &&
-               IsNeutralClip(settings);
+               IsNeutralClip(settings) &&
+               settings.GetSaturationColorRanges().Length == 0;
     }
 
     private static bool IsCoreNeutral(BrightnessBalancerToneMapperSettings settings)
     {
-        return MathF.Abs(settings.Strength) <= Epsilon &&
+        return MathF.Abs(settings.Strength) <= Epsilon ||
                MathF.Abs(settings.Lighting - 1f) <= Epsilon &&
                MathF.Abs(settings.BrightnessBoost - 1f) <= Epsilon &&
                IsNeutralClip(settings);

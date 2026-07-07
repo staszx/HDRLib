@@ -17,6 +17,7 @@ public class BrightnessBalancerToneMapperTests
     {
         var source = CreateSampleImage();
         var settings = new BrightnessBalancerToneMapperSettings().MakeNeutral();
+        settings.Strength = 1f;
         settings.WhiteClip = 0.5f;
 
         var result = ApplyCpu(settings, Clone(source));
@@ -29,11 +30,70 @@ public class BrightnessBalancerToneMapperTests
     {
         var source = CreateSampleImage();
         var settings = new BrightnessBalancerToneMapperSettings().MakeNeutral();
+        settings.Strength = 1f;
         settings.BlackClip = 0.7f;
 
         var result = ApplyCpu(settings, Clone(source));
 
         Assert.That(MeanAbsoluteDifference(source, result), Is.GreaterThan(0.05f));
+    }
+
+    [Test]
+    public void ApplyInPlace_StrengthZeroIgnoresBrightnessBoost()
+    {
+        var source = CreateSampleImage();
+        var settings = new BrightnessBalancerToneMapperSettings().MakeNeutral();
+        settings.Strength = 0f;
+        settings.BrightnessBoost = 2f;
+
+        var result = ApplyCpu(settings, Clone(source));
+
+        AssertImagesClose(source, result, 1e-6f);
+    }
+
+    [Test]
+    public void ApplyInPlace_StrengthZeroIgnoresLighting()
+    {
+        var source = CreateSampleImage();
+        var settings = new BrightnessBalancerToneMapperSettings().MakeNeutral();
+        settings.Strength = 0f;
+        settings.Lighting = 0f;
+
+        var result = ApplyCpu(settings, Clone(source));
+
+        AssertImagesClose(source, result, 1e-6f);
+    }
+
+    [Test]
+    public void ApplyInPlace_LightingChangesOutputFromNeutralPreset()
+    {
+        var source = CreateSampleImage();
+        var settings = new BrightnessBalancerToneMapperSettings().MakeNeutral();
+        settings.Lighting = 0f;
+
+        var result = ApplyCpu(settings, Clone(source));
+
+        Assert.That(MeanAbsoluteDifference(source, result), Is.GreaterThan(0.05f));
+    }
+
+    [Test]
+    public void ApplyInPlace_BrightnessBoostIncreasesMeanLuminanceMonotonically()
+    {
+        var previous = float.NegativeInfinity;
+
+        for (var boost = 1f; boost <= 2.001f; boost += 0.25f)
+        {
+            var settings = new BrightnessBalancerToneMapperSettings().MakeNeutral();
+            settings.Strength = 1f;
+            settings.BrightnessBoost = boost;
+
+            var result = ApplyCpu(settings, CreateSampleImage());
+            var mean = MeanLuminance(result);
+
+            Assert.That(mean, Is.GreaterThanOrEqualTo(previous - 1e-5f),
+                $"BrightnessBoost {boost:F2} produced {mean:F6} after {previous:F6}.");
+            previous = mean;
+        }
     }
 
     [Test]
@@ -125,6 +185,17 @@ public class BrightnessBalancerToneMapperTests
         }
 
         return total / (expected.Pixels.Length * 3);
+    }
+
+    private static float MeanLuminance(HdrImage image)
+    {
+        var sum = 0f;
+        foreach (var pixel in image.Pixels)
+        {
+            sum += pixel.Light();
+        }
+
+        return sum / image.Pixels.Length;
     }
 
     private static void AssertImagesClose(HdrImage expected, HdrImage actual, float tolerance)
