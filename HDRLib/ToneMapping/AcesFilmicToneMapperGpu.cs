@@ -17,7 +17,7 @@ internal sealed class AcesFilmicToneMapperGpu : ToneMapperGpu
     private readonly Accelerator accelerator;
     private readonly AcesFilmicTonemapperSettings settings;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<float, Stride1D.Dense>, float> exposureLogSumKernel;
-    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float> toneMapKernel;
+    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float, int> toneMapKernel;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float> gammaKernel;
 
     public AcesFilmicToneMapperGpu(GpuContext context, AcesFilmicTonemapperSettings settings) : base(context, settings)
@@ -25,7 +25,7 @@ internal sealed class AcesFilmicToneMapperGpu : ToneMapperGpu
         this.accelerator = context.Accelerator;
         this.settings = settings;
         this.exposureLogSumKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<float, Stride1D.Dense>, float>(ToneMapperUtilities.ExposureLogSumKernel);
-        this.toneMapKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float>(ToneMapKernel);
+        this.toneMapKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float, float, float, int>(ToneMapKernel);
         this.gammaKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float>(ApplyGammaKernel);
     }
 
@@ -38,7 +38,7 @@ internal sealed class AcesFilmicToneMapperGpu : ToneMapperGpu
         var neutralExposure = neutralExposureAuto * exposureManual;
         var exposure = neutralExposure * (this.settings.Key / DefaultKey);
 
-        this.toneMapKernel((int)gpuPixels.Length, gpuPixels, exposure, neutralExposure, effectiveSettings.Brightness, effectiveSettings.Contrast, effectiveSettings.Saturation);
+        this.toneMapKernel((int)gpuPixels.Length, gpuPixels, exposure, neutralExposure, effectiveSettings.Brightness, effectiveSettings.Contrast, effectiveSettings.Saturation, this.ForceToneMappingCore ? 1 : 0);
 
         var gamma = XMath.Max(effectiveSettings.Gamma, 0.1f);
         if (XMath.Abs(gamma - 1f) > 1e-3f)
@@ -52,7 +52,7 @@ internal sealed class AcesFilmicToneMapperGpu : ToneMapperGpu
         return ToneMapperUtilities.ComputeAutoExposure(this.accelerator, gpuPixels, this.exposureLogSumKernel, DefaultKey, AcesConstants.ExposureDelta, AcesConstants.ExposureEpsilon);
     }
 
-    private static void ToneMapKernel(Index1D index, ArrayView1D<Rgb, Stride1D.Dense> pixels, float exposure, float neutralExposure, float brightness, float contrast, float saturation)
+    private static void ToneMapKernel(Index1D index, ArrayView1D<Rgb, Stride1D.Dense> pixels, float exposure, float neutralExposure, float brightness, float contrast, float saturation, int forceToneMappingCore)
     {
         var p = pixels[index];
 
@@ -80,9 +80,18 @@ internal sealed class AcesFilmicToneMapperGpu : ToneMapperGpu
         var neutralMappedG = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, AcesConstants.Output10, AcesConstants.Output11, AcesConstants.Output12);
         var neutralMappedB = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, AcesConstants.Output20, AcesConstants.Output21, AcesConstants.Output22);
 
-        r = sourceR + (mappedR - neutralMappedR);
-        g = sourceG + (mappedG - neutralMappedG);
-        b = sourceB + (mappedB - neutralMappedB);
+        if (forceToneMappingCore == 0)
+        {
+            r = sourceR + (mappedR - neutralMappedR);
+            g = sourceG + (mappedG - neutralMappedG);
+            b = sourceB + (mappedB - neutralMappedB);
+        }
+        else
+        {
+            r = mappedR;
+            g = mappedG;
+            b = mappedB;
+        }
 
         r *= brightness;
         g *= brightness;

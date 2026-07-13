@@ -32,46 +32,64 @@ protected ToneMapper(ToneMapperSettings settings)
 
     public void ApplyInPlace(Image<Rgb> image)
     {
+        this.ApplyInPlace(image, forceCore: false);
+    }
+
+    internal void ApplyHdrInPlace(Image<Rgb> image)
+    {
+        this.ApplyInPlace(image, forceCore: true);
+    }
+
+    private void ApplyInPlace(Image<Rgb> image, bool forceCore)
+    {
         if (image.Length == 0)
         {
             return;
         }
 
-        if (this.Settings.IsNeutral())
+        if (!forceCore && this.Settings.IsNeutral())
         {
             return;
         }
 
-        this.SourcePixelsBeforeProcessing = this.PreservesSourceBeforeProcessing
-            ? (Rgb[])image.Pixels.Clone()
-            : null;
-
-        if (this.NormalizesInputRange)
+        this.ForceToneMappingCore = forceCore;
+        try
         {
-            ToneMapperUtilities.NormalizeInputRange(image.Pixels);
+            this.SourcePixelsBeforeProcessing = this.PreservesSourceBeforeProcessing
+                ? (Rgb[])image.Pixels.Clone()
+                : null;
+
+            if (this.NormalizesInputRange)
+            {
+                ToneMapperUtilities.NormalizeInputRange(image.Pixels);
+            }
+
+            var originalPixels = CreateBlendSource(image.Pixels, this.Settings.Transparent);
+
+            if (this.Settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
+            {
+                this.whiteBalancer.ApplyInPlace(image, this.Settings.WhiteBalanceReferenceType, this.Settings.WhiteBalanceReferenceColor);
+            }
+
+            var effectiveSettings = this.BuildEffectiveSettings(image);
+            var applyCore = forceCore || this.ShouldApplyCore();
+            if (applyCore)
+            {
+                this.ApplyInPlace(image, effectiveSettings);
+            }
+
+            ToneBoostProcessor.ApplyInPlace(image.Pixels, this.Settings.ShadowsBoost, this.Settings.MidtonesBoost, this.Settings.HighlightsBoost);
+            DehazeProcessor.ApplyInPlace(image, this.Settings.Dehaze);
+            LocalContrastProcessor.ApplyInPlace(image, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
+            this.ApplyColorTemperature(image);
+            this.ApplyPostProcess(image, includeCommonSettings: !applyCore);
+            ApplyBlending(image.Pixels, originalPixels, this.Settings.Transparent);
         }
-
-        var originalPixels = CreateBlendSource(image.Pixels, this.Settings.Transparent);
-
-        if (this.Settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
+        finally
         {
-            this.whiteBalancer.ApplyInPlace(image, this.Settings.WhiteBalanceReferenceType, this.Settings.WhiteBalanceReferenceColor);
+            this.SourcePixelsBeforeProcessing = null;
+            this.ForceToneMappingCore = false;
         }
-
-        var effectiveSettings = this.BuildEffectiveSettings(image);
-        var applyCore = this.ShouldApplyCore();
-        if (applyCore)
-        {
-            this.ApplyInPlace(image, effectiveSettings);
-        }
-
-        ToneBoostProcessor.ApplyInPlace(image.Pixels, this.Settings.ShadowsBoost, this.Settings.MidtonesBoost, this.Settings.HighlightsBoost);
-        DehazeProcessor.ApplyInPlace(image, this.Settings.Dehaze);
-        LocalContrastProcessor.ApplyInPlace(image, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
-        this.ApplyColorTemperature(image);
-        this.ApplyPostProcess(image, includeCommonSettings: !applyCore);
-        ApplyBlending(image.Pixels, originalPixels, this.Settings.Transparent);
-        this.SourcePixelsBeforeProcessing = null;
     }
 
     public void Save(Stream stream)
@@ -101,9 +119,11 @@ protected ToneMapper(ToneMapperSettings settings)
 /// <param name="effectiveSettings">Computed settings derived from user configuration and auto‑adjust.</param>
 protected abstract void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettings effectiveSettings);
 
-    protected virtual bool NormalizesInputRange => true;
+    protected virtual bool NormalizesInputRange => false;
 
     protected virtual bool PreservesSourceBeforeProcessing => false;
+
+    protected bool ForceToneMappingCore { get; private set; }
 
     /// <summary>
 /// Helper that prepares SIMD buffers, invokes the core processing delegate, and writes results back to the image.

@@ -18,29 +18,47 @@ internal abstract class ToneMapperSIMD
 
     public void ApplyInPlace(Vector256<float>[][] pixels, int width, int height)
     {
-        if (this.Settings.IsNeutral())
+        this.ApplyInPlace(pixels, width, height, forceCore: false);
+    }
+
+    internal void ApplyHdrInPlace(Vector256<float>[][] pixels, int width, int height)
+    {
+        this.ApplyInPlace(pixels, width, height, forceCore: true);
+    }
+
+    private void ApplyInPlace(Vector256<float>[][] pixels, int width, int height, bool forceCore)
+    {
+        if (!forceCore && this.Settings.IsNeutral())
         {
             return;
         }
 
-        var applyCore = this.ShouldApplyCore();
-        if (applyCore && this.NormalizesInputRange)
+        this.ForceToneMappingCore = forceCore;
+        try
         {
-            NormalizeInputRange(pixels, width * height);
-        }
+            var applyCore = forceCore || this.ShouldApplyCore();
+            if (applyCore && this.NormalizesInputRange)
+            {
+                NormalizeInputRange(pixels, width * height);
+            }
 
-        if (applyCore)
+            if (applyCore)
+            {
+                this.ApplyCoreInPlace(pixels, width, height);
+            }
+
+            if (!this.AppliesToneBoostInternally)
+            {
+                this.ApplyToneBoostInPlace(pixels);
+            }
+
+            DehazeProcessorSIMD.ApplyInPlace(pixels, this.Settings.Dehaze);
+            this.ApplyPostProcessInPlace(pixels, includeCommonSettings: !applyCore);
+        }
+        finally
         {
-            this.ApplyCoreInPlace(pixels, width, height);
+            this.ForceToneMappingCore = false;
         }
-
-        if (!this.AppliesToneBoostInternally)
-        {
-            this.ApplyToneBoostInPlace(pixels);
-        }
-
-        DehazeProcessorSIMD.ApplyInPlace(pixels, this.Settings.Dehaze);
-        this.ApplyPostProcessInPlace(pixels, includeCommonSettings: !applyCore);
     }
 
     internal void ApplyCoreOnlyInPlace(Vector256<float>[][] pixels, int width, int height)
@@ -50,7 +68,9 @@ internal abstract class ToneMapperSIMD
 
     protected virtual bool AppliesToneBoostInternally => false;
 
-    protected virtual bool NormalizesInputRange => true;
+    protected virtual bool NormalizesInputRange => false;
+
+    protected bool ForceToneMappingCore { get; private set; }
 
     protected abstract void ApplyCoreInPlace(Vector256<float>[][] pixels, int width, int height);
 

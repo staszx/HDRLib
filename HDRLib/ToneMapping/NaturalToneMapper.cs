@@ -46,7 +46,8 @@ internal sealed class NaturalToneMapper : ToneMapper
         var logAverage = MathF.Exp((float)(logSum / pixelCount));
         var whiteLum = Percentile(luminance, this.settings.WhitePointPercentile);
         var exposureCompensation = MathF.Pow(2f, effectiveSettings.ExposureEV);
-        if (this.settings.BypassToneCompressionForLdr &&
+        if (!this.ForceToneMappingCore &&
+            this.settings.BypassToneCompressionForLdr &&
             whiteLum <= this.settings.LdrBypassWhitePointThreshold &&
             maxLum <= this.settings.LdrBypassWhitePointThreshold)
         {
@@ -76,8 +77,11 @@ internal sealed class NaturalToneMapper : ToneMapper
         var compensationWhitePoint = MathF.Max(whiteLum * compensationExposure, 1e-3f);
         var compensationWhitePointSquared = (compensationWhitePoint * compensationWhitePoint) * tonalRangeCompression;
         var mappedAverage = Compress(MathF.Max(logAverage * compensationExposure, Epsilon), compensationWhitePointSquared);
-        var brightnessCompensation = this.settings.AutoBrightnessCompensation
-            ? ComputeBrightnessCompensation(this.settings.OutputMidGray, mappedAverage)
+        var outputMidGray = this.ForceToneMappingCore
+            ? MathF.Max(this.settings.OutputMidGray, 0.33f)
+            : this.settings.OutputMidGray;
+        var brightnessCompensation = this.settings.AutoBrightnessCompensation || this.ForceToneMappingCore
+            ? ComputeBrightnessCompensation(outputMidGray, mappedAverage)
             : 1f;
         var saturationRanges = this.settings.GetSaturationColorRanges();
 

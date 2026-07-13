@@ -156,7 +156,7 @@ internal class RadianceMap : IRadianceMap
 
     public unsafe void Normalize(HDRLib.HdrImageOptions options)
     {
-        if (this.toneMapperSettings is null || this.toneMapperSettings.IsNeutral())
+        if (this.toneMapperSettings is null)
         {
             var averageBrightness = HdrBrightnessNormalizer.CalculateAverageBrightness(this.Image.Pixels, this.Image.Pixels.Length);
             var scale = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f);
@@ -171,7 +171,7 @@ internal class RadianceMap : IRadianceMap
         if (this.toneMapperSettings is not null)
         {
             var toneMapper = ToneMapperFactory.Create(this.toneMapperSettings);
-            toneMapper.ApplyInPlace(this.Image);
+            ((ToneMapper)toneMapper).ApplyHdrInPlace(this.Image);
         }
 
         for (int i = 0; i < this.Image.Pixels.Length; i++)

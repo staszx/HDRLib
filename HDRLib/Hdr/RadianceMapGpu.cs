@@ -108,7 +108,7 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
     public void Normalize(HDRLib.HdrImageOptions options)
     {
         var accelerator = this.context.Accelerator;
-        if (this.toneMapperSettings is null || this.toneMapperSettings.IsNeutral())
+        if (this.toneMapperSettings is null)
         {
             var pixels = this.gpuPixels.GetAsArray1D();
             var averageBrightness = HdrBrightnessNormalizer.CalculateAverageBrightness(pixels, pixels.Length);
@@ -117,7 +117,7 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
             accelerator.Synchronize();
             return;
         }
-        this.toneMapper!.ApplyInPlace(this.gpuPixels, this.width, this.height);
+        this.toneMapper!.ApplyHdrInPlace(this.gpuPixels, this.width, this.height);
         this.context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(255, 255, 255));
         accelerator.Synchronize();
     }

@@ -73,57 +73,75 @@ protected ToneMapperSettings Settings { get; }
 
     public virtual void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height)
     {
+        this.ApplyInPlace(gpuPixels, width, height, forceCore: false);
+    }
+
+    public virtual void ApplyHdrInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height)
+    {
+        this.ApplyInPlace(gpuPixels, width, height, forceCore: true);
+    }
+
+    private void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height, bool forceCore)
+    {
         if (gpuPixels.Length == 0)
         {
             return;
         }
 
-        if (this.Settings.IsNeutral())
+        if (!forceCore && this.Settings.IsNeutral())
         {
             return;
         }
 
-        if (this.PreservesSourceBeforeProcessing)
+        this.ForceToneMappingCore = forceCore;
+        try
         {
-            var source = this.GetTempBuffer(gpuPixels.Length).View;
-            this.copyKernel((int)gpuPixels.Length, gpuPixels, source);
-            this.SourcePixelsBeforeProcessing = source;
-        }
+            if (this.PreservesSourceBeforeProcessing)
+            {
+                var source = this.GetTempBuffer(gpuPixels.Length).View;
+                this.copyKernel((int)gpuPixels.Length, gpuPixels, source);
+                this.SourcePixelsBeforeProcessing = source;
+            }
 
-        var applyCore = this.ShouldApplyCore();
-        if (applyCore && this.NormalizesInputRange)
-        {
-            this.NormalizeInputRange(gpuPixels);
-        }
+            var applyCore = forceCore || this.ShouldApplyCore();
+            if (applyCore && this.NormalizesInputRange)
+            {
+                this.NormalizeInputRange(gpuPixels);
+            }
 
-        var shouldBlend = ShouldBlend(this.Settings.Transparent);
-        var original = shouldBlend
-            ? this.GetBlendBuffer(gpuPixels.Length).View
-            : default;
-        if (shouldBlend)
-        {
-            this.copyKernel((int)gpuPixels.Length, gpuPixels, original);
-        }
+            var shouldBlend = ShouldBlend(this.Settings.Transparent);
+            var original = shouldBlend
+                ? this.GetBlendBuffer(gpuPixels.Length).View
+                : default;
+            if (shouldBlend)
+            {
+                this.copyKernel((int)gpuPixels.Length, gpuPixels, original);
+            }
 
-        if (this.Settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
-        {
-            this.whiteBalancer.ApplyInPlace(gpuPixels, this.Settings.WhiteBalanceReferenceType, this.Settings.WhiteBalanceReferenceColor);
-        }
+            if (this.Settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
+            {
+                this.whiteBalancer.ApplyInPlace(gpuPixels, this.Settings.WhiteBalanceReferenceType, this.Settings.WhiteBalanceReferenceColor);
+            }
 
-        var effectiveSettings = this.BuildEffectiveSettings(gpuPixels);
-        if (applyCore)
-        {
-            this.ApplyInPlace(gpuPixels, effectiveSettings);
-        }
+            var effectiveSettings = this.BuildEffectiveSettings(gpuPixels);
+            if (applyCore)
+            {
+                this.ApplyInPlace(gpuPixels, effectiveSettings);
+            }
 
-        this.ApplyToneBoost(gpuPixels);
-        this.dehazeProcessor.ApplyInPlace(gpuPixels, this.Settings.Dehaze);
-        this.ApplyLocalContrast(gpuPixels, width, height, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
-        this.ApplyColorTemperature(gpuPixels);
-        this.ApplyPostProcess(gpuPixels, includeCommonSettings: !applyCore);
-        if (shouldBlend)
+            this.ApplyToneBoost(gpuPixels);
+            this.dehazeProcessor.ApplyInPlace(gpuPixels, this.Settings.Dehaze);
+            this.ApplyLocalContrast(gpuPixels, width, height, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
+            this.ApplyColorTemperature(gpuPixels);
+            this.ApplyPostProcess(gpuPixels, includeCommonSettings: !applyCore);
+            if (shouldBlend)
+            {
+                this.blendKernel((int)gpuPixels.Length, original, gpuPixels, Math.Clamp(this.Settings.Transparent, 0f, 100f) / 100f);
+            }
+        }
+        finally
         {
-            this.blendKernel((int)gpuPixels.Length, original, gpuPixels, Math.Clamp(this.Settings.Transparent, 0f, 100f) / 100f);
+            this.ForceToneMappingCore = false;
         }
     }
 
@@ -134,9 +152,11 @@ protected ToneMapperSettings Settings { get; }
 /// <param name="effectiveSettings">Effective settings derived from configuration.</param>
 protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, EffectiveToneMapperSettings effectiveSettings);
 
-    protected virtual bool NormalizesInputRange => true;
+    protected virtual bool NormalizesInputRange => false;
 
     protected virtual bool PreservesSourceBeforeProcessing => false;
+
+    protected bool ForceToneMappingCore { get; private set; }
 
     private EffectiveToneMapperSettings BuildEffectiveSettings(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels)
     {

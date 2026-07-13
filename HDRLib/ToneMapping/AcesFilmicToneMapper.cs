@@ -86,9 +86,18 @@ internal sealed class AcesFilmicToneMapper : ToneMapper
             var neutralMappedG = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, AcesConstants.Output10, AcesConstants.Output11, AcesConstants.Output12);
             var neutralMappedB = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, AcesConstants.Output20, AcesConstants.Output21, AcesConstants.Output22);
 
-            r = sourceR + (mappedR - neutralMappedR);
-            g = sourceG + (mappedG - neutralMappedG);
-            b = sourceB + (mappedB - neutralMappedB);
+            if (this.ForceToneMappingCore)
+            {
+                r = mappedR;
+                g = mappedG;
+                b = mappedB;
+            }
+            else
+            {
+                r = sourceR + (mappedR - neutralMappedR);
+                g = sourceG + (mappedG - neutralMappedG);
+                b = sourceB + (mappedB - neutralMappedB);
+            }
 
             r *= brightness;
             g *= brightness;

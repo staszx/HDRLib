@@ -272,7 +272,7 @@ namespace HDRLib.Hdr
         
         public unsafe void Normalize(HDRLib.HdrImageOptions options)
         {
-            if (this.toneMapperSettings is null || this.toneMapperSettings.IsNeutral())
+            if (this.toneMapperSettings is null)
             {
                 var averageBrightness = this.CalculateAverageBrightness();
                 var scale = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f) * 255f;
@@ -283,7 +283,7 @@ namespace HDRLib.Hdr
             if (this.toneMapperSettings is not null)
             {
                 var toneMapper = ToneMapperFactorySIMD.Create(this.toneMapperSettings);
-                toneMapper.ApplyInPlace(this.Pixels, this.width, this.height);
+                toneMapper.ApplyHdrInPlace(this.Pixels, this.width, this.height);
             }
 
 
