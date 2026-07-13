@@ -55,7 +55,8 @@ protected ToneMapper(ToneMapperSettings settings)
         this.ForceToneMappingCore = forceCore;
         try
         {
-            this.SourcePixelsBeforeProcessing = this.PreservesSourceBeforeProcessing
+            var saturationRanges = this.Settings.GetSaturationColorRanges();
+            this.SourcePixelsBeforeProcessing = this.PreservesSourceBeforeProcessing || saturationRanges.Length != 0
                 ? (Rgb[])image.Pixels.Clone()
                 : null;
 
@@ -64,7 +65,7 @@ protected ToneMapper(ToneMapperSettings settings)
                 ToneMapperUtilities.NormalizeInputRange(image.Pixels);
             }
 
-            var originalPixels = CreateBlendSource(image.Pixels, this.Settings.Transparent);
+            var originalPixels = forceCore ? null : CreateBlendSource(image.Pixels, this.Settings.Transparent);
 
             if (this.Settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
             {
@@ -78,11 +79,21 @@ protected ToneMapper(ToneMapperSettings settings)
                 this.ApplyInPlace(image, effectiveSettings);
             }
 
+            if (forceCore)
+            {
+                originalPixels = CreateBlendSource(image.Pixels, this.Settings.Transparent);
+            }
+
             ToneBoostProcessor.ApplyInPlace(image.Pixels, this.Settings.ShadowsBoost, this.Settings.MidtonesBoost, this.Settings.HighlightsBoost);
             DehazeProcessor.ApplyInPlace(image, this.Settings.Dehaze);
             LocalContrastProcessor.ApplyInPlace(image, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
             this.ApplyColorTemperature(image);
             this.ApplyPostProcess(image, includeCommonSettings: !applyCore);
+            if (!applyCore)
+            {
+                SaturationRangeProcessor.ApplyInPlace(image.Pixels, this.SourcePixelsBeforeProcessing, saturationRanges);
+            }
+
             ApplyBlending(image.Pixels, originalPixels, this.Settings.Transparent);
         }
         finally

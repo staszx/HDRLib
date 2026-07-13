@@ -19,7 +19,7 @@ internal sealed class ContrastBalancerToneMapper : ToneMapper
     protected override unsafe void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettings effectiveSettings)
     {
         var saturationRanges = this.settings.GetSaturationColorRanges();
-        if (Avx2.IsSupported && !this.settings.AutoAdjustEnabled && saturationRanges.Length == 0)
+        if (Avx2.IsSupported && !this.settings.AutoAdjustEnabled && saturationRanges.Length == 0 && !this.ForceToneMappingCore)
         {
             var simd = new ContrastBalancerToneMapperSIMD(this.settings);
             this.ApplyUsingSimd(image, simd.ApplyCoreOnlyInPlace);
@@ -39,7 +39,7 @@ internal sealed class ContrastBalancerToneMapper : ToneMapper
         }
 
         var avgLum = MathF.Exp(logSum / count);
-        var strength = GetBalanceStrength(this.settings, effectiveSettings);
+        var strength = GetBalanceStrength(this.settings, effectiveSettings, this.ForceToneMappingCore);
         var toneCompression = MathF.Max(this.settings.ToneCompression, 1e-3f);
         var lightingEffect = Math.Max(0f, this.settings.LightingEffect);
         var luminanceScale = Math.Max(0f, this.settings.Luminance) * MathF.Pow(2f, effectiveSettings.ExposureEV);
@@ -80,9 +80,9 @@ internal sealed class ContrastBalancerToneMapper : ToneMapper
 
     protected override bool PreservesSourceBeforeProcessing => this.settings.GetSaturationColorRanges().Length != 0;
 
-    private static float GetBalanceStrength(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
+    private static float GetBalanceStrength(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings, bool forceToneMappingCore)
     {
-        return HasActiveBalanceControls(settings, effectiveSettings)
+        return forceToneMappingCore || HasActiveBalanceControls(settings, effectiveSettings)
             ? Math.Clamp(settings.Strength, 0f, 1f)
             : 0f;
     }

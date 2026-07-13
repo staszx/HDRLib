@@ -95,7 +95,13 @@ internal sealed class AcesFilmicToneMapperSIMD : ToneMapperSIMD
             var neutralMappedG = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, Output10, Output11, Output12);
             var neutralMappedB = MapOutputChannel(neutralAcesR, neutralAcesG, neutralAcesB, Output20, Output21, Output22);
 
-            if (!this.ForceToneMappingCore)
+            if (this.ForceToneMappingCore)
+            {
+                r = mappedR;
+                g = mappedG;
+                b = mappedB;
+            }
+            else
             {
                 r = Avx.Add(sourceR, Avx.Subtract(mappedR, neutralMappedR));
                 g = Avx.Add(sourceG, Avx.Subtract(mappedG, neutralMappedG));

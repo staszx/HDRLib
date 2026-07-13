@@ -431,6 +431,105 @@ public class NaturalToneMapperTests
     }
 
     [Test]
+    public void ApplyInPlace_ZeroStrengthSaturationFilterMatchesNoFilter()
+    {
+        var pixels =
+            new[]
+            {
+                new Rgb(0.65f, 0.30f, 0.25f),
+                new Rgb(0.20f, 0.36f, 0.55f)
+            };
+        var unfilteredSettings = new NaturalToneMapperSettings().MakeNeutral();
+        var filteredSettings = new NaturalToneMapperSettings().MakeNeutral();
+        filteredSettings.SaturationFilters =
+        [
+            new SaturationColorFilter
+            {
+                Enabled = true,
+                SaturationAdjustment = 0f,
+                Ranges =
+                [
+                    new SaturationColorRange
+                    {
+                        HueMin = 0f,
+                        HueMax = 360f,
+                        SaturationMin = 0f,
+                        SaturationMax = 1f,
+                        ValueMin = 0f,
+                        ValueMax = 1f,
+                        SaturationMultiplier = 0f
+                    }
+                ]
+            }
+        ];
+
+        var unfiltered = new Image<Rgb>(pixels.Length, 1) { Pixels = (Rgb[])pixels.Clone() };
+        var filtered = new Image<Rgb>(pixels.Length, 1) { Pixels = (Rgb[])pixels.Clone() };
+
+        ToneMapperFactory.Create(unfilteredSettings).ApplyInPlace(unfiltered);
+        ToneMapperFactory.Create(filteredSettings).ApplyInPlace(filtered);
+
+        Assert.Multiple(() =>
+        {
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                Assert.That(filtered.Pixels[i].Red, Is.EqualTo(unfiltered.Pixels[i].Red).Within(1e-6f));
+                Assert.That(filtered.Pixels[i].Green, Is.EqualTo(unfiltered.Pixels[i].Green).Within(1e-6f));
+                Assert.That(filtered.Pixels[i].Blue, Is.EqualTo(unfiltered.Pixels[i].Blue).Within(1e-6f));
+            }
+        });
+    }
+
+    [Test]
+    public void ApplyInPlace_SaturationFilterPreservesLuminanceContrast()
+    {
+        var pixels =
+            new[]
+            {
+                new Rgb(0.42f, 0.38f, 0.34f),
+                new Rgb(0.70f, 0.64f, 0.58f)
+            };
+        var settings = new NaturalToneMapperSettings().MakeNeutral();
+        settings.SaturationFilters =
+        [
+            new SaturationColorFilter
+            {
+                Enabled = true,
+                SaturationAdjustment = 50f,
+                Ranges =
+                [
+                    new SaturationColorRange
+                    {
+                        HueMin = 0f,
+                        HueMax = 360f,
+                        SaturationMin = 0f,
+                        SaturationMax = 1f,
+                        ValueMin = 0f,
+                        ValueMax = 1f,
+                        SaturationMultiplier = 50f
+                    }
+                ]
+            }
+        ];
+
+        var image = new Image<Rgb>(pixels.Length, 1) { Pixels = (Rgb[])pixels.Clone() };
+        var sourceContrast = pixels[1].Light() - pixels[0].Light();
+
+        ToneMapperFactory.Create(settings).ApplyInPlace(image);
+
+        var resultContrast = image.Pixels[1].Light() - image.Pixels[0].Light();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(image.Pixels[0].Light(), Is.EqualTo(pixels[0].Light()).Within(1e-5f));
+            Assert.That(image.Pixels[1].Light(), Is.EqualTo(pixels[1].Light()).Within(1e-5f));
+            Assert.That(resultContrast, Is.EqualTo(sourceContrast).Within(1e-5f));
+            Assert.That(Chroma(image.Pixels[0]), Is.GreaterThan(Chroma(pixels[0])));
+            Assert.That(Chroma(image.Pixels[1]), Is.GreaterThan(Chroma(pixels[1])));
+        });
+    }
+
+    [Test]
     public void ApplyInPlace_VibranceBoostsMutedColorsMoreThanSaturatedColors()
     {
         var settings = new NaturalToneMapperSettings().MakeNeutral();

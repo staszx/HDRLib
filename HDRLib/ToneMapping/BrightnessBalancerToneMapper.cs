@@ -18,7 +18,7 @@ internal sealed class BrightnessBalancerToneMapper : ToneMapper
 
     protected override unsafe void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettings effectiveSettings)
     {
-        if (Avx2.IsSupported && !this.settings.AutoAdjustEnabled)
+        if (Avx2.IsSupported && !this.settings.AutoAdjustEnabled && !this.ForceToneMappingCore)
         {
             var simd = new BrightnessBalancerToneMapperSIMD(this.settings);
             this.ApplyUsingSimd(image, simd.ApplyCoreOnlyInPlace);
@@ -40,7 +40,7 @@ internal sealed class BrightnessBalancerToneMapper : ToneMapper
         var strength = Math.Clamp(this.settings.Strength, 0f, 1f);
         var lighting = MathF.Max(0f, this.settings.Lighting);
         var brightnessBoost = MathF.Max(0f, this.settings.BrightnessBoost) * MathF.Max(effectiveSettings.Brightness, 0f);
-        var hasBalanceControls = HasActiveBalanceControls(this.settings);
+        var hasBalanceControls = this.ForceToneMappingCore || HasActiveBalanceControls(this.settings);
         var blackClip = Math.Clamp(this.settings.BlackClip, 0f, 0.99f);
         var whiteClip = Math.Clamp(this.settings.WhiteClip, blackClip + 1e-3f, 4f);
         var invClipRange = 1f / (whiteClip - blackClip);

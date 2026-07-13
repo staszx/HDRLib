@@ -40,7 +40,7 @@ internal sealed class AcesFilmicToneMapper : ToneMapper
 
     protected override void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettings effectiveSettings)
     {
-        if (Avx2.IsSupported && !this.settings.AutoAdjustEnabled)
+        if (Avx2.IsSupported && !this.settings.AutoAdjustEnabled && !this.ForceToneMappingCore)
         {
             var simd = new AcesFilmicToneMapperSIMD(this.settings);
             this.ApplyUsingSimd(image, simd.ApplyCoreOnlyInPlace);

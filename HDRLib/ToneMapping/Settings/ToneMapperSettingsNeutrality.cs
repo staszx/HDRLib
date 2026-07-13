@@ -130,8 +130,7 @@ public static class ToneMapperSettingsNeutrality
                MathF.Abs(settings.ToneCompression - 1f) <= Epsilon &&
                MathF.Abs(settings.LightingEffect - 1f) <= Epsilon &&
                MathF.Abs(settings.Luminance - 1f) <= Epsilon &&
-               IsNeutralClip(settings) &&
-               settings.GetSaturationColorRanges().Length == 0;
+               IsNeutralClip(settings);
     }
 
     private static bool IsCoreNeutral(BrightnessBalancerToneMapperSettings settings)

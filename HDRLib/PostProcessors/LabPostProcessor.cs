@@ -42,8 +42,8 @@ public sealed class LabPostProcessor : IPostProcessor
     private const float ContrastPivot = 50f;
     private const float ContrastScale = 50f;
     private const float ContrastStrength = 40f;
-    private const float GrayMaskStart = 0.05f;
-    private const float GrayMaskEnd = 0.25f;
+    private const float GrayMaskStart = 8f;
+    private const float GrayMaskEnd = 60f;
     private const float WhitePointL = 100f;
     private const float ExposureMin = 0.85f;
     private const float ExposureMax = 1.25f;
@@ -245,7 +245,7 @@ public sealed class LabPostProcessor : IPostProcessor
                 }
 
                 var chroma = MathF.Sqrt(a * a + b * b);
-                var grayMask = SmoothStep(GrayMaskStart, GrayMaskEnd, chroma);
+                var grayMask = 1f - SmoothStep(GrayMaskStart, GrayMaskEnd, chroma);
                 var vibranceScale = 1 + grayMask * vibranceDelta;
                 a *= vibranceScale;
                 b *= vibranceScale;

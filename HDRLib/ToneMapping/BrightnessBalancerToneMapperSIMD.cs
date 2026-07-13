@@ -27,7 +27,7 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
         var strength = Vector256.Create(Math.Clamp(this.settings.Strength, 0f, 1f));
         var lighting = Vector256.Create(MathF.Max(0f, this.settings.Lighting));
         var brightnessBoost = Vector256.Create(MathF.Max(0f, this.settings.BrightnessBoost) * MathF.Max(this.Settings.Brightness, 0f));
-        var hasBalanceControls = HasActiveBalanceControls(this.settings);
+        var hasBalanceControls = this.ForceToneMappingCore || HasActiveBalanceControls(this.settings);
         var blackClipValue = Math.Clamp(this.settings.BlackClip, 0f, 0.99f);
         var whiteClipValue = Math.Clamp(this.settings.WhiteClip, blackClipValue + 1e-3f, 4f);
         var blackClip = Vector256.Create(blackClipValue);

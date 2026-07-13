@@ -45,8 +45,8 @@ public sealed class LabPostProcessorGpu
     private const float ContrastPivot = 50f;
     private const float ContrastScale = 50f;
     private const float ContrastStrength = 40f;
-    private const float GrayMaskStart = 0.05f;
-    private const float GrayMaskEnd = 0.25f;
+    private const float GrayMaskStart = 8f;
+    private const float GrayMaskEnd = 60f;
     private const float WhitePointL = 100f;
     private const float ExposureMin = 0.85f;
     private const float ExposureMax = 1.25f;
@@ -204,7 +204,7 @@ public sealed class LabPostProcessorGpu
         }
 
         var chroma = XMath.Sqrt(a * a + b * b);
-        var grayMask = GpuHelper.SmoothStep(GrayMaskStart, GrayMaskEnd, chroma);
+        var grayMask = 1f - GpuHelper.SmoothStep(GrayMaskStart, GrayMaskEnd, chroma);
         var vibranceScale = 1f + grayMask * (vibrance - 1f);
         a *= vibranceScale;
         b *= vibranceScale;

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SaturationColorFilter xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>Sunset</Name>
+  <Description>Boosts warm red, orange, and golden sunset hues.</Description>
+  <Enabled>false</Enabled>
+  <SaturationAdjustment>32</SaturationAdjustment>
+  <Ranges>
+    <SaturationColorRange>
+      <HueMin>350</HueMin>
+      <HueMax>18</HueMax>
+      <SaturationMin>0.12</SaturationMin>
+      <SaturationMax>1</SaturationMax>
+      <ValueMin>0.08</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>32</SaturationMultiplier>
+    </SaturationColorRange>
+    <SaturationColorRange>
+      <HueMin>18</HueMin>
+      <HueMax>38</HueMax>
+      <SaturationMin>0.12</SaturationMin>
+      <SaturationMax>1</SaturationMax>
+      <ValueMin>0.08</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>32</SaturationMultiplier>
+    </SaturationColorRange>
+    <SaturationColorRange>
+      <HueMin>10</HueMin>
+      <HueMax>28</HueMax>
+      <SaturationMin>0.14</SaturationMin>
+      <SaturationMax>1</SaturationMax>
+      <ValueMin>0.08</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>44</SaturationMultiplier>
+    </SaturationColorRange>
+    <SaturationColorRange>
+      <HueMin>38</HueMin>
+      <HueMax>58</HueMax>
+      <SaturationMin>0.10</SaturationMin>
+      <SaturationMax>0.95</SaturationMax>
+      <ValueMin>0.12</ValueMin>
+      <ValueMax>1</ValueMax>
+      <SaturationMultiplier>24</SaturationMultiplier>
+    </SaturationColorRange>
+  </Ranges>
+</SaturationColorFilter>

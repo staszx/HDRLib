@@ -18,7 +18,13 @@ public static class ToneMapperSettingsSaturationFilters
     {
         if (ranges is { Length: > 0 })
         {
-            target.AddRange(ranges);
+            foreach (var range in ranges)
+            {
+                if (MathF.Abs(range.SaturationMultiplier) > 1e-6f)
+                {
+                    target.Add(range);
+                }
+            }
         }
     }
 

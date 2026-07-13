@@ -3,6 +3,7 @@
 namespace HDRLib.Tests;
 
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using Align;
@@ -19,6 +20,102 @@ public class HdrProcessingTests
     [SetUp]
     public void Setup()
     {
+    }
+
+    [Test]
+    public void ProcessHdrSeries_WithReferenceBracket_MatchesToneMapperReferenceBytes()
+    {
+        var expectedHashes = new Dictionary<string, string>
+        {
+            ["AcesFilmic CPU"] = "9C16B8418BFB4C25B5F90C191BA5F14388BD211BB1D7A523AEEF48B638B9F1C3",
+            ["AcesFilmic SIMD"] = "9C16B8418BFB4C25B5F90C191BA5F14388BD211BB1D7A523AEEF48B638B9F1C3",
+            ["AcesFilmic GPU"] = "0DD6A8C1B8D6D6F5F767CAE9283AF44F9F0B18D1127081A6BF177FBA49C829E3",
+            ["NaturalAutoAdjust CPU"] = "A4178AB5DC20E2B1F68B88F7CD902C0DE7BD81C76D1B2F744C3F3A9E2170F9B0",
+            ["NaturalAutoAdjust SIMD"] = "A4178AB5DC20E2B1F68B88F7CD902C0DE7BD81C76D1B2F744C3F3A9E2170F9B0",
+            ["NaturalAutoAdjust GPU"] = "CF9F5C8A5C46521538F9EE54E9113CE08A56BD3F2ECB016FDCDC62C52A162F4D",
+            ["Natural CPU"] = "0D3053D4A58276F9C142348EFCA7AC93FB43ADB23A457609F7BEE9FA71F1C357",
+            ["Natural SIMD"] = "0D3053D4A58276F9C142348EFCA7AC93FB43ADB23A457609F7BEE9FA71F1C357",
+            ["Natural GPU"] = "65BA19AA973715CEAF7E10810F094C84F97B0E51F29E58A23027377CC050AFDA",
+            ["ContrastBalancer CPU"] = "1B0E430D9BB4F5AAA85607FB4E220B5B45DEDA67973C49034A2A4FC98BFC3354",
+            ["ContrastBalancer SIMD"] = "1B0E430D9BB4F5AAA85607FB4E220B5B45DEDA67973C49034A2A4FC98BFC3354",
+            ["ContrastBalancer GPU"] = "1B0E430D9BB4F5AAA85607FB4E220B5B45DEDA67973C49034A2A4FC98BFC3354",
+            ["BrightnessBalancer CPU"] = "A7D0C63408CD3DB7B4E0936F1F07581E648D804409BC0F220A6BD9DFB0FF6243",
+            ["BrightnessBalancer SIMD"] = "A7D0C63408CD3DB7B4E0936F1F07581E648D804409BC0F220A6BD9DFB0FF6243",
+            ["BrightnessBalancer GPU"] = "A7D0C63408CD3DB7B4E0936F1F07581E648D804409BC0F220A6BD9DFB0FF6243"
+        };
+
+        var modes = new List<ProcessingMode> { ProcessingMode.CPU, ProcessingMode.SIMD };
+        using var gpu = TryCreateGpuContext();
+        if (gpu is not null)
+        {
+            modes.Add(ProcessingMode.GPU);
+        }
+
+        foreach (var toneMapper in CreateToneMapperSettings())
+        {
+            foreach (var mode in modes)
+            {
+                var image = ProcessHdrSeries(
+                    GetSamplesPath(),
+                    ["DSC_5299.JPG", "DSC_5300.JPG", "DSC_5301.JPG"],
+                    align: false,
+                    mode,
+                    toneMapper.Settings.Clone(),
+                    imageScale: 0.1f);
+                var hash = HashImageBytes(image);
+
+                Assert.That(hash, Is.EqualTo(expectedHashes[$"{toneMapper.Name} {mode}"]), $"{toneMapper.Name} {mode}");
+            }
+        }
+    }
+
+    [Test]
+    public void ProcessHdrSeries_WithTransparentHdrSettings_MatchesReferenceBytes()
+    {
+        var expectedHashes = new Dictionary<string, string>
+        {
+            ["CPU"] = "139A36881741751391F90EFC85180800329EE0083F34926A7DAD61FC267742B5",
+            ["SIMD"] = "15529D2661EADC2500806EE139D21191BD44D4293084E401EDD58F7D8489A90F",
+            ["GPU"] = "909A71735227F15D65E131F2247CFA6999063B6E9F81F8F317D820775BA9CF5D"
+        };
+        var settings = new NaturalToneMapperSettings
+        {
+            AutoAdjustEnabled = true,
+            Contrast = 1.1f,
+            ShadowsBoost = 1.15f,
+            MidtonesBoost = 1.1f,
+            HighlightsBoost = 1.05f,
+            Dehaze = 15f,
+            LocalContrast = 25f,
+            LocalContrastRadius = 20,
+            Transparent = 5f,
+            Saturation = 15f
+        };
+
+        var modes = new List<ProcessingMode> { ProcessingMode.CPU, ProcessingMode.SIMD };
+        using var gpu = TryCreateGpuContext();
+        if (gpu is not null)
+        {
+            modes.Add(ProcessingMode.GPU);
+        }
+
+        foreach (var mode in modes)
+        {
+            var image = ProcessHdrSeries(
+                GetSamplesPath(),
+                ["DSC_5299.JPG", "DSC_5300.JPG", "DSC_5301.JPG"],
+                align: false,
+                mode,
+                settings.Clone(),
+                imageScale: 0.1f);
+            var bytes = LoadFullImage(image);
+            var hash = HashImageBytes(image);
+            Assert.Multiple(() =>
+            {
+                Assert.That(hash, Is.EqualTo(expectedHashes[mode.ToString()]), mode.ToString());
+                Assert.That(WhitePixelPercent(bytes), Is.LessThan(1.0), mode.ToString());
+            });
+        }
     }
 
     [Test]
@@ -329,6 +426,12 @@ public class HdrProcessingTests
         return bytes;
     }
 
+    private static string HashImageBytes(IImageProxy image)
+    {
+        var bytes = LoadFullImage(image);
+        return Convert.ToHexString(SHA256.HashData(bytes));
+    }
+
     private static ImageComparison Compare(byte[] expected, byte[] actual)
     {
         Assert.That(actual, Has.Length.EqualTo(expected.Length));
@@ -348,6 +451,21 @@ public class HdrProcessingTests
         return new ImageComparison((double)total / expected.Length, max, diffs[p99Index]);
     }
 
+    private static double WhitePixelPercent(byte[] bytes)
+    {
+        var white = 0;
+        var pixels = bytes.Length / 3;
+        for (var i = 0; i < bytes.Length; i += 3)
+        {
+            if (bytes[i] == 255 && bytes[i + 1] == 255 && bytes[i + 2] == 255)
+            {
+                white++;
+            }
+        }
+
+        return pixels == 0 ? 0 : (white * 100.0) / pixels;
+    }
+
     private static GpuContext CreateGpuContextOrSkip()
     {
         try
@@ -364,6 +482,25 @@ public class HdrProcessingTests
             {
                 Assert.Ignore($"GPU accelerator is not available: {ex.Message}");
                 throw;
+            }
+        }
+    }
+
+    private static GpuContext? TryCreateGpuContext()
+    {
+        try
+        {
+            return new GpuContext(2);
+        }
+        catch
+        {
+            try
+            {
+                return new GpuContext();
+            }
+            catch
+            {
+                return null;
             }
         }
     }

@@ -108,6 +108,31 @@ public class ToneMapperXmlSerializationTests
         Assert.That(ranges.Select(x => x.SaturationMultiplier), Is.All.EqualTo(24f));
     }
 
+    [Test]
+    public void GetSaturationColorRanges_DropsZeroStrengthRanges()
+    {
+        var settings = new NaturalToneMapperSettings
+        {
+            SaturationFilters =
+            [
+                new SaturationColorFilter
+                {
+                    Enabled = true,
+                    Ranges =
+                    [
+                        new SaturationColorRange { HueMin = 0f, HueMax = 20f, SaturationMin = 0f, SaturationMax = 1f, ValueMin = 0f, ValueMax = 1f, SaturationMultiplier = 0f },
+                        new SaturationColorRange { HueMin = 40f, HueMax = 60f, SaturationMin = 0f, SaturationMax = 1f, ValueMin = 0f, ValueMax = 1f, SaturationMultiplier = -20f }
+                    ]
+                }
+            ]
+        };
+
+        var ranges = settings.GetSaturationColorRanges();
+
+        Assert.That(ranges, Has.Length.EqualTo(1));
+        Assert.That(ranges[0].SaturationMultiplier, Is.EqualTo(-20f));
+    }
+
     [TestCase("skin_filter.xml")]
     [TestCase("gray_filter.xml")]
     public void PresetFiles_LoadAsToneMapperSettings(string fileName)

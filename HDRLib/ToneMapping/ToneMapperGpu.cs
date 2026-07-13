@@ -96,7 +96,8 @@ protected ToneMapperSettings Settings { get; }
         this.ForceToneMappingCore = forceCore;
         try
         {
-            if (this.PreservesSourceBeforeProcessing)
+            var saturationRanges = this.Settings.GetSaturationColorRanges();
+            if (this.PreservesSourceBeforeProcessing || saturationRanges.Length != 0)
             {
                 var source = this.GetTempBuffer(gpuPixels.Length).View;
                 this.copyKernel((int)gpuPixels.Length, gpuPixels, source);
@@ -113,7 +114,7 @@ protected ToneMapperSettings Settings { get; }
             var original = shouldBlend
                 ? this.GetBlendBuffer(gpuPixels.Length).View
                 : default;
-            if (shouldBlend)
+            if (shouldBlend && !forceCore)
             {
                 this.copyKernel((int)gpuPixels.Length, gpuPixels, original);
             }
@@ -129,11 +130,21 @@ protected ToneMapperSettings Settings { get; }
                 this.ApplyInPlace(gpuPixels, effectiveSettings);
             }
 
+            if (shouldBlend && forceCore)
+            {
+                this.copyKernel((int)gpuPixels.Length, gpuPixels, original);
+            }
+
             this.ApplyToneBoost(gpuPixels);
             this.dehazeProcessor.ApplyInPlace(gpuPixels, this.Settings.Dehaze);
             this.ApplyLocalContrast(gpuPixels, width, height, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
             this.ApplyColorTemperature(gpuPixels);
             this.ApplyPostProcess(gpuPixels, includeCommonSettings: !applyCore);
+            if (!applyCore)
+            {
+                this.ApplySaturationRanges(gpuPixels, saturationRanges);
+            }
+
             if (shouldBlend)
             {
                 this.blendKernel((int)gpuPixels.Length, original, gpuPixels, Math.Clamp(this.Settings.Transparent, 0f, 100f) / 100f);
@@ -235,6 +246,19 @@ protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels,
         var greenScale = 1f + (0.05f * MathF.Abs(normalized));
         var blueScale = 1f - (0.2f * normalized);
         this.colorTemperatureKernel((int)gpuPixels.Length, gpuPixels, redScale, greenScale, blueScale);
+    }
+
+    private void ApplySaturationRanges(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, SaturationColorRange[] ranges)
+    {
+        if (ranges.Length == 0)
+        {
+            return;
+        }
+
+        var pixels = gpuPixels.GetAsArray1D();
+        var sourcePixels = this.SourcePixelsBeforeProcessing.GetAsArray1D();
+        SaturationRangeProcessor.ApplyInPlace(pixels, sourcePixels, ranges);
+        gpuPixels.CopyFromCPU(pixels);
     }
 
     private static bool IsNeutralColorTemperature(float temperature)

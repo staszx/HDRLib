@@ -51,7 +51,7 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
                 pixelCount,
                 gpuPixels,
                 avgLum,
-                GetBalanceStrength(this.settings, effectiveSettings),
+                GetBalanceStrength(this.settings, effectiveSettings, this.ForceToneMappingCore),
                 XMath.Max(this.settings.ToneCompression, 1e-3f),
                 XMath.Max(this.settings.LightingEffect, 0f),
                 luminanceScale,
@@ -70,7 +70,7 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
                 gpuPixels,
                 this.SourcePixelsBeforeProcessing,
                 avgLum,
-                GetBalanceStrength(this.settings, effectiveSettings),
+                GetBalanceStrength(this.settings, effectiveSettings, this.ForceToneMappingCore),
                 XMath.Max(this.settings.ToneCompression, 1e-3f),
                 XMath.Max(this.settings.LightingEffect, 0f),
                 luminanceScale,
@@ -94,9 +94,9 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
 
     protected override bool PreservesSourceBeforeProcessing => this.settings.GetSaturationColorRanges().Length != 0;
 
-    private static float GetBalanceStrength(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings)
+    private static float GetBalanceStrength(ContrastBalancerToneMapperSettings settings, EffectiveToneMapperSettings effectiveSettings, bool forceToneMappingCore)
     {
-        return HasActiveBalanceControls(settings, effectiveSettings)
+        return forceToneMappingCore || HasActiveBalanceControls(settings, effectiveSettings)
             ? Math.Clamp(settings.Strength, 0f, 1f)
             : 0f;
     }
