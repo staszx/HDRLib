@@ -79,7 +79,7 @@ public static class ToneMapperSettingsNeutrality
                 aces.Key = 0.18f;
                 break;
             case NaturalToneMapperSettings compressor:
-                compressor.TargetGray = 0.24f;
+                compressor.TargetGray = NaturalToneMapperSettings.NeutralTargetGray;
                 compressor.WhitePointPercentile = 1f;
                 compressor.OutputMidGray = 0.25f;
                 compressor.AutoBrightnessCompensation = false;

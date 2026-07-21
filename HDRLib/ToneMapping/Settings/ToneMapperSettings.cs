@@ -93,7 +93,7 @@ public SaturationColorFilter GrayColorFilter { get; set; } = SaturationFilterPre
     /// <summary>
 /// Gets or sets the gamma correction value.
 /// </summary>
-public float Gamma { get; set; } = 1.5f;
+public float Gamma { get; set; } = 1f;
     /// <summary>
 /// Gets or sets the color temperature in Kelvin.
 /// </summary>

@@ -57,8 +57,6 @@ namespace HDRLib.Hdr.Debevec
 
             return lut;
         }
-        
-
 
         public IImageProxy Process(List<IImageProxy> images, HdrImageOptions options)
         {
@@ -76,7 +74,6 @@ namespace HDRLib.Hdr.Debevec
 
             this.radianceMap = this.CreateRadianceMap(options.ToneMapperSettings ?? this.defaultToneMapperSettings);
 
-         //   const float alphaMotionK = 12f / 100;
             var imageCount = images.Count;
             var width = images[0].Width;
             var height = images[0].Height;
@@ -85,15 +82,13 @@ namespace HDRLib.Hdr.Debevec
             var standardNumber = 0;
             var standard = images[standardNumber];
 
-           // var motionFilterStrength = 3f;//Math.Clamp(options.MotionFilterStrength, 1f, 100f);
-           var alphaMotion = 6f;//motionFilterStrength * alphaMotionK;
             var pixelsInfo = new PixelInfo[imageCount];
             Parallel.For(0, imageCount, i =>
             {
                 pixelsInfo[i] = PixelInfo.Create(images[i]);
             });
 
-            var motionMask =  MotionMask.BuildMotionMask(pixelsInfo, standardNumber, alphaMotion, 3);
+            var motionMask = CreateMotionMask(pixelsInfo, standardNumber, options.MotionFilterStrength);
 
             var position = new List<Point>();
             position.AddRange(this.GetStratifiedSamplePoints(standard, motionMask, (int)(sampleCount), 0.6f));
@@ -108,24 +103,21 @@ namespace HDRLib.Hdr.Debevec
 
             var response = new double[Const.ChannelCount][];
             Parallel.For(0, Const.ChannelCount, i => { response[i] = GSolve(pixelsInfo, smoothFactor, i, LutW); });
+            this.radianceMap.Fill(pixelsInfo, response, motionMask!, width, height);
+            this.radianceMap.Normalize(options);
+            return this.radianceMap.ToImage<T>();
+        }
 
+        internal static float[,]? CreateMotionMask(PixelInfo[] pixelsInfo, int standardNumber, int motionFilterStrength)
+        {
+            if (motionFilterStrength <= 0)
+            {
+                return null;
+            }
 
-           // var motionMask1 = motionFilterStrength == 1 ? null : motionMask;
-            radianceMap.Fill(pixelsInfo, response, motionMask, width, height);
-            //radianceMap.Normalize();
-          //  var pixels = this.radianceMap.GetPixels();
-          //  var lab = colorConverter.FromRgb(pixels, height, width);
-
-          
-
-         this.radianceMap.Normalize(options);
-            return radianceMap.ToImage<T>();
-
-
-           
-            //   this.radianceMap.Fill(pixelsInfo, response, width, height);
-            //   this.radianceMap.Normalize();
-
+            const float alphaMotionPerStrengthUnit = 12f / 100f;
+            var strength = Math.Clamp(motionFilterStrength, 1, 100);
+            return MotionMask.BuildMotionMask(pixelsInfo, standardNumber, strength * alphaMotionPerStrengthUnit, 3f);
         }
 
         private IRadianceMap CreateRadianceMap(ToneMapperSettings? toneMapperSettings)
@@ -269,7 +261,7 @@ namespace HDRLib.Hdr.Debevec
 
         private List<Point> GetStratifiedSamplePoints(
        IImageProxy img,
-       float[,] motionMask,
+       float[,]? motionMask,
        int totalSamples = 3000,
        float threshold = 0.85f,
        int bins = 64,

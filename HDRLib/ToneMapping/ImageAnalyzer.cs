@@ -151,8 +151,10 @@ internal static class ImageAnalyzer
 
         Array.Sort(logL);
 
-        var ln5 = PercentileSorted(logL, 0.05f);
-        var ln95 = PercentileSorted(logL, 0.95f);
+        var percentile5 = PercentileSorted(logL, 0.05f);
+        var percentile95 = PercentileSorted(logL, 0.95f);
+        var ln5 = MathF.Min(percentile5, percentile95);
+        var ln95 = MathF.Max(percentile5, percentile95);
         drStops = ln95 - ln5;
 
         for (var i = 0; i < n; i++)

@@ -91,14 +91,16 @@ internal abstract class ImageAlignerPyramid : ImageAligner
 
         var source = this.images[index];
         var transform = this.EstimateTransform(source);
-        var aligned = this.ApplyTransform(source, transform);
+        var reference = this.FillOutsideWithReference ? this.images[0] : null;
+        var aligned = this.ApplyTransform(source, transform, reference);
         source.Dispose();
         this.images[index] = aligned;
     }
 
     protected abstract AlignShiftScore FindBestShift(IAlignBitmapLevel referenceLevel, IAlignBitmapLevel candidateLevel, int centerX, int centerY, int radius);
 
-    protected virtual IImageProxy ApplyTransform(IImageProxy source, AlignmentTransform transform) => ImageAlignmentResampler.Apply(source, transform);
+    protected virtual IImageProxy ApplyTransform(IImageProxy source, AlignmentTransform transform, IImageProxy? reference) =>
+        ImageAlignmentResampler.Apply(source, transform, reference);
 
     private AlignmentTransform EstimateTransform(IImageProxy image)
     {
@@ -110,7 +112,9 @@ internal abstract class ImageAlignerPyramid : ImageAligner
             var refineStart = MathF.Max(-this.MaxAngle, best.Angle - this.CoarseAngleStep);
             var refineEnd = MathF.Min(this.MaxAngle, best.Angle + this.CoarseAngleStep);
             var refined = this.EvaluateAngles(candidateLevels, GetAngles(refineStart, refineEnd, this.FineAngleStep));
-            return this.RefineTransform(candidateLevels, refined.Score < best.Score ? refined : best);
+            var selected = refined.Score < best.Score ? refined : best;
+            var fullResolution = this.EvaluateSingleAngle(candidateLevels, selected.Angle);
+            return this.RefineTransform(candidateLevels, fullResolution);
         }
         finally
         {

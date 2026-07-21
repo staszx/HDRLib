@@ -6,7 +6,7 @@ using Interfaces;
 
 internal static class ImageAlignmentResampler
 {
-    public static IImageProxy Apply(IImageProxy source, AlignmentTransform transform)
+    public static IImageProxy Apply(IImageProxy source, AlignmentTransform transform, IImageProxy? reference = null)
     {
         if (Math.Abs(transform.Angle) < 0.001f && transform.X == 0 && transform.Y == 0)
         {
@@ -18,6 +18,8 @@ internal static class ImageAlignmentResampler
         {
             sourceRows[y] = source.LoadRow(y);
         }
+
+        var referenceRows = LoadReferenceRows(reference, source.Width, source.Height);
 
         var result = source.Clone();
         var centerX = (source.Width - 1) * 0.5f;
@@ -35,7 +37,7 @@ internal static class ImageAlignmentResampler
                 var dy = y - centerY - transform.Y;
                 var srcX = cos * dx - sin * dy + centerX;
                 var srcY = sin * dx + cos * dy + centerY;
-                SampleBilinear(sourceRows, source.Width, source.Height, srcX, srcY, row, x * 3);
+                SampleBilinear(sourceRows, referenceRows, source.Width, source.Height, srcX, srcY, row, x * 3, x, y);
             }
 
             result.SaveRow(y, row);
@@ -44,13 +46,46 @@ internal static class ImageAlignmentResampler
         return result;
     }
 
-    private static void SampleBilinear(byte[][] sourceRows, int width, int height, float x, float y, byte[] destination, int offset)
+    private static byte[][]? LoadReferenceRows(IImageProxy? reference, int width, int height)
+    {
+        if (reference is null)
+        {
+            return null;
+        }
+
+        if (reference.Width != width || reference.Height != height)
+        {
+            throw new ArgumentException("Reference image dimensions must match the source image.", nameof(reference));
+        }
+
+        var rows = new byte[height][];
+        for (var y = 0; y < height; y++)
+        {
+            rows[y] = reference.LoadRow(y);
+        }
+
+        return rows;
+    }
+
+    private static void SampleBilinear(byte[][] sourceRows, byte[][]? referenceRows, int width, int height, float x, float y, byte[] destination, int offset,
+        int destinationX, int destinationY)
     {
         if (x < 0 || y < 0 || x >= width - 1 || y >= height - 1)
         {
-            destination[offset] = 0;
-            destination[offset + 1] = 0;
-            destination[offset + 2] = 0;
+            if (referenceRows is null)
+            {
+                destination[offset] = 0;
+                destination[offset + 1] = 0;
+                destination[offset + 2] = 0;
+            }
+            else
+            {
+                var referenceOffset = destinationX * 3;
+                destination[offset] = referenceRows[destinationY][referenceOffset];
+                destination[offset + 1] = referenceRows[destinationY][referenceOffset + 1];
+                destination[offset + 2] = referenceRows[destinationY][referenceOffset + 2];
+            }
+
             return;
         }
 

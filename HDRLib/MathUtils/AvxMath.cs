@@ -123,13 +123,13 @@ public static Vector256<double> Exp(Vector256<double> x)
             return Avx.Multiply(er, pow2n);
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         /// <summary>
-/// Computes the natural logarithm of each element in a float vector.
-/// </summary>
-/// <param name="value">Input vector.</param>
-/// <returns>Vector of logarithms.</returns>
-public static Vector256<float> Ln(Vector256<float> value)
+        /// Computes the natural logarithm of each element in a float vector.
+        /// </summary>
+        /// <param name="value">Input vector.</param>
+        /// <returns>Vector of logarithms.</returns>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        public static Vector256<float> Ln(Vector256<float> value)
         {
             Span<float> lanes = stackalloc float[Vector256<float>.Count];
             value.CopyTo(lanes);
@@ -144,13 +144,13 @@ public static Vector256<float> Ln(Vector256<float> value)
                 MathF.Log(lanes[7]));
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         /// <summary>
-/// Computes the exponential function (e^x) for each element in a float vector.
-/// </summary>
-/// <param name="value">Input vector.</param>
-/// <returns>Vector of exponentials.</returns>
-public static Vector256<float> Exp(Vector256<float> value)
+        /// Computes the exponential function (e^x) for each element in a float vector.
+        /// </summary>
+        /// <param name="value">Input vector.</param>
+        /// <returns>Vector of exponentials.</returns>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        public static Vector256<float> Exp(Vector256<float> value)
         {
             Span<float> lanes = stackalloc float[Vector256<float>.Count];
             value.CopyTo(lanes);
@@ -165,14 +165,14 @@ public static Vector256<float> Exp(Vector256<float> value)
                 MathF.Exp(lanes[7]));
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         /// <summary>
-/// Raises each element of the base vector to the corresponding exponent.
-/// </summary>
-/// <param name="value">Base values.</param>
-/// <param name="exponent">Exponent values.</param>
-/// <returns>Vector of results.</returns>
-public static Vector256<float> Pow(Vector256<float> value, Vector256<float> exponent)
+        /// Raises each element of the base vector to the corresponding exponent.
+        /// </summary>
+        /// <param name="value">Base values.</param>
+        /// <param name="exponent">Exponent values.</param>
+        /// <returns>Vector of results.</returns>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        public static Vector256<float> Pow(Vector256<float> value, Vector256<float> exponent)
         {
             return Exp(Avx.Multiply(Ln(value), exponent));
         }

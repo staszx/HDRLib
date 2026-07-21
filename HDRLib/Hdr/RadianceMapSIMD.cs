@@ -283,7 +283,7 @@ namespace HDRLib.Hdr
             if (this.toneMapperSettings is not null)
             {
                 var toneMapper = ToneMapperFactorySIMD.Create(this.toneMapperSettings);
-                toneMapper.ApplyHdrInPlace(this.Pixels, this.width, this.height);
+                toneMapper.ApplyHdrInPlace(this.Pixels, this.width, this.height, this.targetAverageBrightness);
             }
 
 
@@ -314,28 +314,34 @@ namespace HDRLib.Hdr
             });
         }
 
-        private float CalculateAverageBrightness()
+        private unsafe float CalculateAverageBrightness()
         {
-            const float rw = 0.2126f;
-            const float gw = 0.7152f;
-            const float bw = 0.0722f;
+            var vRw = Vector256.Create(0.2126f);
+            var vGw = Vector256.Create(0.7152f);
+            var vBw = Vector256.Create(0.0722f);
 
-            var sum = 0f;
-            for (var y = 0; y < this.height; y++)
+            var acc = Vector256<float>.Zero;
+            var pixels = this.Pixels;
+            var vecLen = pixels[0].Length;
+
+            fixed (Vector256<float>* pr = pixels[0], pg = pixels[1], pb = pixels[2])
             {
-                var rowOffset = y * this.vectorWidth;
-                for (var x = 0; x < this.width; x++)
+                for (var i = 0; i < vecLen; i++)
                 {
-                    var vectorIndex = rowOffset + (x / Vector256<float>.Count);
-                    var elementIndex = x % Vector256<float>.Count;
-                    sum +=
-                        (this.Pixels[0][vectorIndex].GetElement(elementIndex) * rw) +
-                        (this.Pixels[1][vectorIndex].GetElement(elementIndex) * gw) +
-                        (this.Pixels[2][vectorIndex].GetElement(elementIndex) * bw);
+                    acc += pr[i] * vRw;
+                    acc += pg[i] * vGw;
+                    acc += pb[i] * vBw;
                 }
             }
 
-            return this.width == 0 || this.height == 0 ? 0f : sum / (this.width * this.height);
+            // Horizontal sum of the 8-lane accumulator (one 8-element reduction, negligible overhead)
+            Span<float> accLanes = stackalloc float[8];
+            acc.CopyTo(accLanes);
+            var sum = accLanes[0] + accLanes[1] + accLanes[2] + accLanes[3]
+                    + accLanes[4] + accLanes[5] + accLanes[6] + accLanes[7];
+
+            var total = this.width * this.height;
+            return total == 0 ? 0f : sum / total;
         }
 
         public unsafe IImageProxy ToImage<T>() where T : IImageProxy

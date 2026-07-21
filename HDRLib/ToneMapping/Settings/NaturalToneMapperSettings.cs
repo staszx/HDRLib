@@ -4,6 +4,8 @@ namespace HDRLib.ToneMapping.Settings;
 
 public sealed class NaturalToneMapperSettings : ToneMapperSettings
 {
+    internal const float NeutralTargetGray = 0.24f;
+
     public NaturalToneMapperSettings()
     {
         this.MakeNeutral();

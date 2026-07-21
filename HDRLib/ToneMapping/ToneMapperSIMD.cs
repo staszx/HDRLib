@@ -21,12 +21,12 @@ internal abstract class ToneMapperSIMD
         this.ApplyInPlace(pixels, width, height, forceCore: false);
     }
 
-    internal void ApplyHdrInPlace(Vector256<float>[][] pixels, int width, int height)
+    internal void ApplyHdrInPlace(Vector256<float>[][] pixels, int width, int height, float sceneAverageBrightness)
     {
-        this.ApplyInPlace(pixels, width, height, forceCore: true);
+        this.ApplyInPlace(pixels, width, height, forceCore: true, sceneAverageBrightness);
     }
 
-    private void ApplyInPlace(Vector256<float>[][] pixels, int width, int height, bool forceCore)
+    private void ApplyInPlace(Vector256<float>[][] pixels, int width, int height, bool forceCore, float sceneAverageBrightness = float.NaN)
     {
         if (!forceCore && this.Settings.IsNeutral())
         {
@@ -34,6 +34,7 @@ internal abstract class ToneMapperSIMD
         }
 
         this.ForceToneMappingCore = forceCore;
+        this.HdrSceneAverageBrightness = sceneAverageBrightness;
         try
         {
             var applyCore = forceCore || this.ShouldApplyCore();
@@ -58,6 +59,7 @@ internal abstract class ToneMapperSIMD
         finally
         {
             this.ForceToneMappingCore = false;
+            this.HdrSceneAverageBrightness = float.NaN;
         }
     }
 
@@ -71,6 +73,8 @@ internal abstract class ToneMapperSIMD
     protected virtual bool NormalizesInputRange => false;
 
     protected bool ForceToneMappingCore { get; private set; }
+
+    protected float HdrSceneAverageBrightness { get; private set; } = float.NaN;
 
     protected abstract void ApplyCoreInPlace(Vector256<float>[][] pixels, int width, int height);
 

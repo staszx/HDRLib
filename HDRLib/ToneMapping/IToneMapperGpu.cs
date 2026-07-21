@@ -11,5 +11,5 @@ internal interface IToneMapperGpu : IDisposable
 {
     void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height);
 
-    void ApplyHdrInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height);
+    void ApplyHdrInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height, float sceneAverageBrightness);
 }

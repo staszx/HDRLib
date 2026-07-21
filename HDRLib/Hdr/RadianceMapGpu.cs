@@ -61,7 +61,7 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
         using var gpuPixelInfo = accelerator.Allocate1D<byte>(imageCount * frameSize);
         for (int i = 0; i < imageCount; i++)
         {
-            var frame = pixelInfo[i].LoadFullImage(); // byte[] â RGB interleaved
+            var frame = pixelInfo[i].LoadFullImage(); // byte[] Ð² RGB interleaved
             if (frame.Length != frameSize)
                 throw new Exception($"Frame {i} has invalid size {frame.Length}, expected {frameSize}");
             gpuPixelInfo.View.SubView(i * frameSize, frameSize).CopyFromCPU(frame.ToArray());
@@ -112,12 +112,12 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
         {
             var pixels = this.gpuPixels.GetAsArray1D();
             var averageBrightness = HdrBrightnessNormalizer.CalculateAverageBrightness(pixels, pixels.Length);
-            var scale = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f) * 255f;
+            var scale= this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f) * 255f;
             this.context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(scale, scale, scale));
             accelerator.Synchronize();
             return;
         }
-        this.toneMapper!.ApplyHdrInPlace(this.gpuPixels, this.width, this.height);
+        this.toneMapper!.ApplyHdrInPlace(this.gpuPixels, this.width, this.height, this.targetAverageBrightness);
         this.context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(255, 255, 255));
         accelerator.Synchronize();
     }

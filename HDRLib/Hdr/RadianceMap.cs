@@ -171,7 +171,7 @@ internal class RadianceMap : IRadianceMap
         if (this.toneMapperSettings is not null)
         {
             var toneMapper = ToneMapperFactory.Create(this.toneMapperSettings);
-            ((ToneMapper)toneMapper).ApplyHdrInPlace(this.Image);
+            ((ToneMapper)toneMapper).ApplyHdrInPlace(this.Image, this.targetAverageBrightness);
         }
 
         for (int i = 0; i < this.Image.Pixels.Length; i++)

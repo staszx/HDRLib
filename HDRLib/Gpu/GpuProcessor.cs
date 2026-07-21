@@ -57,8 +57,7 @@ internal class GpuProcessor
         using var result = this.context.Accelerator.Allocate1D<float>(3);
         result.CopyFromCPU(src);
 
-        var kernel = this.context.Accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<Rgb>, ArrayView<float>>(MinRgbKernel);
-        kernel((int)pixels.Length, pixels, result.View);
+        this.minRgbKernel((int)pixels.Length, pixels, result.View);
         this.context.Accelerator.Synchronize();
         result.CopyToCPU(src);
         return new Rgb(src[0], src[1], src[2]);

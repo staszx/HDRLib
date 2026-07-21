@@ -76,12 +76,12 @@ protected ToneMapperSettings Settings { get; }
         this.ApplyInPlace(gpuPixels, width, height, forceCore: false);
     }
 
-    public virtual void ApplyHdrInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height)
+    public virtual void ApplyHdrInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height, float sceneAverageBrightness)
     {
-        this.ApplyInPlace(gpuPixels, width, height, forceCore: true);
+        this.ApplyInPlace(gpuPixels, width, height, forceCore: true, sceneAverageBrightness);
     }
 
-    private void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height, bool forceCore)
+    private void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height, bool forceCore, float sceneAverageBrightness = float.NaN)
     {
         if (gpuPixels.Length == 0)
         {
@@ -94,6 +94,7 @@ protected ToneMapperSettings Settings { get; }
         }
 
         this.ForceToneMappingCore = forceCore;
+        this.HdrSceneAverageBrightness = sceneAverageBrightness;
         try
         {
             var saturationRanges = this.Settings.GetSaturationColorRanges();
@@ -153,6 +154,7 @@ protected ToneMapperSettings Settings { get; }
         finally
         {
             this.ForceToneMappingCore = false;
+            this.HdrSceneAverageBrightness = float.NaN;
         }
     }
 
@@ -168,6 +170,8 @@ protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels,
     protected virtual bool PreservesSourceBeforeProcessing => false;
 
     protected bool ForceToneMappingCore { get; private set; }
+
+    protected float HdrSceneAverageBrightness { get; private set; } = float.NaN;
 
     private EffectiveToneMapperSettings BuildEffectiveSettings(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels)
     {

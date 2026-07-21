@@ -135,8 +135,10 @@ internal static class ImageAnalyzerSIMD
 
         Array.Sort(sortedLogL);
 
-        var ln5 = PercentileSorted(sortedLogL, 0.05f);
-        var ln95 = PercentileSorted(sortedLogL, 0.95f);
+        var percentile5 = PercentileSorted(sortedLogL, 0.05f);
+        var percentile95 = PercentileSorted(sortedLogL, 0.95f);
+        var ln5 = MathF.Min(percentile5, percentile95);
+        var ln95 = MathF.Max(percentile5, percentile95);
         drStops = ln95 - ln5;
 
         var minV = Vector256.Create(ln5);

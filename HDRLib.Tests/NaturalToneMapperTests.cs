@@ -14,6 +14,47 @@ using NUnit.Framework;
 public class NaturalToneMapperTests
 {
     [Test]
+    public void MakeNeutral_DefaultGammaMatchesExplicitOne()
+    {
+        var implicitGamma = new NaturalToneMapperSettings();
+        var explicitGamma = new NaturalToneMapperSettings { Gamma = 1f };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(implicitGamma.Gamma, Is.EqualTo(1f));
+            Assert.That(implicitGamma.ToXml(), Is.EqualTo(explicitGamma.ToXml()));
+        });
+    }
+
+    [Test]
+    public void ApplyHdrInPlace_UsesBracketBrightnessAsExposureBaseline()
+    {
+        var settings = new NaturalToneMapperSettings();
+        var darkSceneMapper = (ToneMapper)ToneMapperFactory.Create(settings.Clone());
+        var brightSceneMapper = (ToneMapper)ToneMapperFactory.Create(settings.Clone());
+        var pixels = new[]
+        {
+            new Rgb(0.01f, 0.01f, 0.01f),
+            new Rgb(0.1f, 0.1f, 0.1f),
+            new Rgb(1f, 1f, 1f),
+            new Rgb(10f, 10f, 10f)
+        };
+        var darkScene = new Image<Rgb>(4, 1) { Pixels = (Rgb[])pixels.Clone() };
+        var brightScene = new Image<Rgb>(4, 1) { Pixels = (Rgb[])pixels.Clone() };
+
+        darkSceneMapper.ApplyHdrInPlace(darkScene, 0.2f);
+        brightSceneMapper.ApplyHdrInPlace(brightScene, 0.5f);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(brightScene.Pixels.Average(x => x.Light()),
+                Is.GreaterThan(darkScene.Pixels.Average(x => x.Light())));
+            Assert.That(darkScene.Pixels[^1].Light(), Is.LessThan(1f));
+            Assert.That(brightScene.Pixels[^1].Light(), Is.LessThan(1f));
+        });
+    }
+
+    [Test]
     public void ApplyInPlace_PreservesNeutralGrayWithoutColorShift()
     {
         var mapper = ToneMapperFactory.Create(new NaturalToneMapperSettings());

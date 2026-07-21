@@ -35,12 +35,12 @@ protected ToneMapper(ToneMapperSettings settings)
         this.ApplyInPlace(image, forceCore: false);
     }
 
-    internal void ApplyHdrInPlace(Image<Rgb> image)
+    internal void ApplyHdrInPlace(Image<Rgb> image, float sceneAverageBrightness)
     {
-        this.ApplyInPlace(image, forceCore: true);
+        this.ApplyInPlace(image, forceCore: true, sceneAverageBrightness);
     }
 
-    private void ApplyInPlace(Image<Rgb> image, bool forceCore)
+    private void ApplyInPlace(Image<Rgb> image, bool forceCore, float sceneAverageBrightness = float.NaN)
     {
         if (image.Length == 0)
         {
@@ -53,6 +53,7 @@ protected ToneMapper(ToneMapperSettings settings)
         }
 
         this.ForceToneMappingCore = forceCore;
+        this.HdrSceneAverageBrightness = sceneAverageBrightness;
         try
         {
             var saturationRanges = this.Settings.GetSaturationColorRanges();
@@ -100,6 +101,7 @@ protected ToneMapper(ToneMapperSettings settings)
         {
             this.SourcePixelsBeforeProcessing = null;
             this.ForceToneMappingCore = false;
+            this.HdrSceneAverageBrightness = float.NaN;
         }
     }
 
@@ -135,6 +137,8 @@ protected abstract void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettin
     protected virtual bool PreservesSourceBeforeProcessing => false;
 
     protected bool ForceToneMappingCore { get; private set; }
+
+    protected float HdrSceneAverageBrightness { get; private set; } = float.NaN;
 
     /// <summary>
 /// Helper that prepares SIMD buffers, invokes the core processing delegate, and writes results back to the image.

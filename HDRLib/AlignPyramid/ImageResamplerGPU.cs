@@ -19,7 +19,7 @@ internal sealed class ImageResamplerGPU
             ResampleKernel);
     }
 
-    public IImageProxy Apply(IImageProxy source, AlignmentTransform transform)
+    public IImageProxy Apply(IImageProxy source, AlignmentTransform transform, IImageProxy? reference = null)
     {
         if (Math.Abs(transform.Angle) < 0.001f && transform.X == 0 && transform.Y == 0)
         {
@@ -36,6 +36,21 @@ internal sealed class ImageResamplerGPU
         using var resultBuffer = this.context.Accelerator.Allocate1D<byte>(sourceRgb.Length);
 
         sourceBuffer.CopyFromCPU(sourceRgb);
+        if (reference is null)
+        {
+            resultBuffer.MemSetToZero();
+        }
+        else
+        {
+            if (reference.Width != width || reference.Height != height)
+            {
+                throw new ArgumentException("Reference image dimensions must match the source image.", nameof(reference));
+            }
+
+            var referenceRgb = new byte[sourceRgb.Length];
+            reference.LoadFullImage(referenceRgb);
+            resultBuffer.CopyFromCPU(referenceRgb);
+        }
 
         var centerX = (width - 1) * 0.5f;
         var centerY = (height - 1) * 0.5f;
@@ -64,9 +79,6 @@ internal sealed class ImageResamplerGPU
 
         if (srcX < 0 || srcY < 0 || srcX >= width - 1 || srcY >= height - 1)
         {
-            destination[destinationOffset] = 0;
-            destination[destinationOffset + 1] = 0;
-            destination[destinationOffset + 2] = 0;
             return;
         }
 

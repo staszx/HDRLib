@@ -122,7 +122,11 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
             return;
         }
 
-        var compensationExposure = MathF.Max(this.settings.TargetGray, 0.01f) / MathF.Max(logAverage, 1e-6f);
+        var targetGray = NaturalToneMapperExposure.ResolveTargetGray(
+            this.settings,
+            this.ForceToneMappingCore,
+            this.HdrSceneAverageBrightness);
+        var compensationExposure = targetGray / MathF.Max(logAverage, 1e-6f);
         var exposure = compensationExposure * exposureCompensation;
 
         var whitePoint = MathF.Max(whiteLum * compensationExposure, 1e-3f);
@@ -139,11 +143,8 @@ internal sealed class NaturalToneMapperGpu : ToneMapperGpu
         var compensationWhitePoint = MathF.Max(whiteLum * compensationExposure, 1e-3f);
         var compensationWhitePointSquared = (compensationWhitePoint * compensationWhitePoint) * tonalRangeCompression;
         var mappedAverage = Compress(MathF.Max(logAverage * compensationExposure, 1e-6f), compensationWhitePointSquared);
-        var outputMidGray = this.ForceToneMappingCore
-            ? MathF.Max(this.settings.OutputMidGray, 0.33f)
-            : this.settings.OutputMidGray;
-        var brightnessCompensation = this.settings.AutoBrightnessCompensation || this.ForceToneMappingCore
-            ? ComputeBrightnessCompensation(outputMidGray, mappedAverage)
+        var brightnessCompensation = this.settings.AutoBrightnessCompensation
+            ? ComputeBrightnessCompensation(this.settings.OutputMidGray, mappedAverage)
             : 1f;
 
         if (saturationRanges.Length == 0)

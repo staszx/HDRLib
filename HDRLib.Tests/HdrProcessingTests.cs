@@ -22,6 +22,91 @@ public class HdrProcessingTests
     {
     }
 
+    [TestCase(0)]
+    [TestCase(-1)]
+    public void CreateMotionMask_NonPositiveStrength_DisablesMotionFiltering(int strength)
+    {
+        var motionMask = HDRProcessor<ImageSharpProxy>.CreateMotionMask([], 0, strength);
+
+        Assert.That(motionMask, Is.Null);
+    }
+
+    [Test]
+    //[TestCase("DSC_7078.JPG", "DSC_7079.JPG", "DSC_7080.JPG", true)]
+    //[TestCase("DSC_5715.JPG", "DSC_5716.JPG", "DSC_5717.JPG", true)]
+    //[TestCase("DSC_6358.jpg", "DSC_6359.jpg", "DSC_6360.jpg", true)]
+    //[TestCase("DSC_6467.jpg", "DSC_6468.jpg", "DSC_6469.jpg", true)]
+    //[TestCase("DSC_6461.jpg", "DSC_6462.jpg", "DSC_6463.jpg", true)]
+    [TestCase("DSC_6912.jpg", "DSC_6913.jpg", "DSC_6914.jpg", true)]
+    [TestCase("Waterfall.jpg", "Waterfall_over.jpg", "Waterfall_under.jpg", false)]
+
+    public void Test1(string imageName1, string imageName2, string imageName3, bool align)
+    {
+        SystemHelper.UseAvxState = UseAvxState.Disable;
+   
+        var path = "D:\\Documents\\Тест\\Hdr";
+
+
+
+            var image1 = new ImageSharpProxy();
+            var image2 = new ImageSharpProxy();
+            var image3 = new ImageSharpProxy();
+
+
+            image1.Load(Path.Combine(path, imageName1));
+            image2.Load(Path.Combine(path, imageName2));
+            image3.Load(Path.Combine(path, imageName3));
+
+            var list = new List<IImageProxy>();
+            list.Add(image1);
+            list.Add(image2);
+            list.Add(image3);
+
+            using var gpu = new GpuContext(2);
+            if (align)
+            {
+                var aligner = ImageAligner.Create(gpu);
+                aligner.FillOutsideWithReference = false;
+                var stopwatch = new Stopwatch();
+                stopwatch.Start();
+                aligner.Process(list);
+                stopwatch.Stop();
+                Console.WriteLine(stopwatch.ElapsedMilliseconds);
+            }
+
+
+            var processor = new HDRProcessor<ImageSharpProxy>(gpu);
+
+        var toneMapperSettings = new NaturalToneMapperSettings(){ Brightness = 1.2f, Gamma = 1.5f};
+        var sourceBrightness = list.Select(MeasureBrightness).ToArray();
+        var darkest = sourceBrightness.MinBy(x => x.Mean);
+        var brightest = sourceBrightness.MaxBy(x => x.Mean);
+
+        var image = processor.Process(list, new HdrImageOptions
+        {
+            SampleCount = 1000,
+            SmoothFactor = 300,
+            MotionFilterStrength = 50, 
+            ToneMapperSettings = toneMapperSettings
+        });
+
+        //var resultBrightness = MeasureBrightness(image);
+        //TestContext.Out.WriteLine($"Darkest: {darkest}; brightest: {brightest}; HDR: {resultBrightness}");
+        //Assert.Multiple(() =>
+        //{
+        //    Assert.That(resultBrightness.Mean, Is.GreaterThan(darkest.Mean).And.LessThan(brightest.Mean));
+        //    Assert.That(resultBrightness.Min, Is.GreaterThan(darkest.Min));
+        //    Assert.That(resultBrightness.Max, Is.LessThan(brightest.Max));
+        //});
+
+
+
+        image.SaveAsJpeg(@$"D:\Test\{imageName1}.jpg");
+
+
+    }
+
+
     [Test]
     public void ProcessHdrSeries_WithReferenceBracket_MatchesToneMapperReferenceBytes()
     {
@@ -30,12 +115,12 @@ public class HdrProcessingTests
             ["AcesFilmic CPU"] = "9C16B8418BFB4C25B5F90C191BA5F14388BD211BB1D7A523AEEF48B638B9F1C3",
             ["AcesFilmic SIMD"] = "9C16B8418BFB4C25B5F90C191BA5F14388BD211BB1D7A523AEEF48B638B9F1C3",
             ["AcesFilmic GPU"] = "0DD6A8C1B8D6D6F5F767CAE9283AF44F9F0B18D1127081A6BF177FBA49C829E3",
-            ["NaturalAutoAdjust CPU"] = "A4178AB5DC20E2B1F68B88F7CD902C0DE7BD81C76D1B2F744C3F3A9E2170F9B0",
-            ["NaturalAutoAdjust SIMD"] = "A4178AB5DC20E2B1F68B88F7CD902C0DE7BD81C76D1B2F744C3F3A9E2170F9B0",
-            ["NaturalAutoAdjust GPU"] = "CF9F5C8A5C46521538F9EE54E9113CE08A56BD3F2ECB016FDCDC62C52A162F4D",
-            ["Natural CPU"] = "0D3053D4A58276F9C142348EFCA7AC93FB43ADB23A457609F7BEE9FA71F1C357",
-            ["Natural SIMD"] = "0D3053D4A58276F9C142348EFCA7AC93FB43ADB23A457609F7BEE9FA71F1C357",
-            ["Natural GPU"] = "65BA19AA973715CEAF7E10810F094C84F97B0E51F29E58A23027377CC050AFDA",
+            ["NaturalAutoAdjust CPU"] = "F7628D713B196CCF8F48E76959F95FA2198F5D9BF14465F2A090DE237E03F863",
+            ["NaturalAutoAdjust SIMD"] = "F7628D713B196CCF8F48E76959F95FA2198F5D9BF14465F2A090DE237E03F863",
+            ["NaturalAutoAdjust GPU"] = "17F129C0FB39DD2CEE37519E3F19A32FDCD11E018534E24750C8DEB727B80023",
+            ["Natural CPU"] = "0A3D2FB4F501C926C701F64E3AEC5AFB3D5B3D60442B5268246DA43C99F25EBB",
+            ["Natural SIMD"] = "0A3D2FB4F501C926C701F64E3AEC5AFB3D5B3D60442B5268246DA43C99F25EBB",
+            ["Natural GPU"] = "622BA869EFF481E6F1317B893206C0FFFAB285A0930EEFF9576FF6EFBBA2DD8C",
             ["ContrastBalancer CPU"] = "1B0E430D9BB4F5AAA85607FB4E220B5B45DEDA67973C49034A2A4FC98BFC3354",
             ["ContrastBalancer SIMD"] = "1B0E430D9BB4F5AAA85607FB4E220B5B45DEDA67973C49034A2A4FC98BFC3354",
             ["ContrastBalancer GPU"] = "1B0E430D9BB4F5AAA85607FB4E220B5B45DEDA67973C49034A2A4FC98BFC3354",
@@ -74,9 +159,9 @@ public class HdrProcessingTests
     {
         var expectedHashes = new Dictionary<string, string>
         {
-            ["CPU"] = "139A36881741751391F90EFC85180800329EE0083F34926A7DAD61FC267742B5",
-            ["SIMD"] = "15529D2661EADC2500806EE139D21191BD44D4293084E401EDD58F7D8489A90F",
-            ["GPU"] = "909A71735227F15D65E131F2247CFA6999063B6E9F81F8F317D820775BA9CF5D"
+            ["CPU"] = "622BA869EFF481E6F1317B893206C0FFFAB285A0930EEFF9576FF6EFBBA2DD8C",
+            ["SIMD"] = "CAED73BC396676C309BCAF9B3766402486D526EBE685BE1C611B21A75C6BAC39",
+            ["GPU"] = "622BA869EFF481E6F1317B893206C0FFFAB285A0930EEFF9576FF6EFBBA2DD8C"
         };
         var settings = new NaturalToneMapperSettings
         {
@@ -426,6 +511,28 @@ public class HdrProcessingTests
         return bytes;
     }
 
+    private static BrightnessRange MeasureBrightness(IImageProxy image)
+    {
+        double sum = 0;
+        var min = double.MaxValue;
+        var max = double.MinValue;
+        var pixelCount = image.Width * image.Height;
+        for (var y = 0; y < image.Height; y++)
+        {
+            var row = image.LoadRow(y);
+            for (var x = 0; x < image.Width; x++)
+            {
+                var offset = x * 3;
+                var brightness = (0.2126 * row[offset]) + (0.7152 * row[offset + 1]) + (0.0722 * row[offset + 2]);
+                sum += brightness;
+                min = Math.Min(min, brightness);
+                max = Math.Max(max, brightness);
+            }
+        }
+
+        return new BrightnessRange(sum / pixelCount, min, max);
+    }
+
     private static string HashImageBytes(IImageProxy image)
     {
         var bytes = LoadFullImage(image);
@@ -515,4 +622,6 @@ public class HdrProcessingTests
     private readonly record struct ToneMapperCase(string Name, ToneMapperSettings Settings);
 
     private readonly record struct ImageComparison(double Mean, int Max, int P99);
+
+    private readonly record struct BrightnessRange(double Mean, double Min, double Max);
 }

@@ -11,11 +11,7 @@ using Adjust;
 
 public struct ScorePartial
 {
-    public double SumRef;
-    public double SumCand;
-    public double SumRef2;
-    public double SumCand2;
-    public double SumProd;
+    public int Mismatch;
     public int Valid;
 }
 
@@ -52,9 +48,9 @@ internal sealed class ImageAlignerPyramidGpu : ImageAlignerPyramid
         this.shiftScoreKernel = context.Accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<byte>, ArrayView<byte>, ArrayView<byte>, ArrayView<byte>, int, int, ArrayView<int>, ArrayView<int>, int, ArrayView<ScorePartial>>(ScoreShiftPartialKernel);
     }
 
-    protected override IImageProxy ApplyTransform(IImageProxy source, AlignmentTransform transform)
+    protected override IImageProxy ApplyTransform(IImageProxy source, AlignmentTransform transform, IImageProxy? reference)
     {
-        return this.resampler.Apply(source, transform);
+        return this.resampler.Apply(source, transform, reference);
     }
 
     protected override AlignmentTransform EvaluateSingleAngle(IReadOnlyList<IAlignBitmapLevel> candidateLevels, float angle)
@@ -132,8 +128,8 @@ internal sealed class ImageAlignerPyramidGpu : ImageAlignerPyramid
 
         var stride = 2 * radius + 1;
         var shiftCount = stride * stride;
-        var totalScores = new double[shiftCount];
-        var totalValids = new long[shiftCount];
+        var totalMismatches = new int[shiftCount];
+        var totalValids = new int[shiftCount];
 
         // Precompute shifts on CPU and upload to GPU once
         var shiftsX = new int[shiftCount];
@@ -151,7 +147,6 @@ internal sealed class ImageAlignerPyramidGpu : ImageAlignerPyramid
 
         var totalThreads = shiftCount * ShiftScoreThreadsPerShift;
         using var partialResults = this.context.Accelerator.Allocate1D<ScorePartial>(totalThreads);
-
         for (var levelIndex = 0; levelIndex < levelCount; levelIndex++)
         {
             var refLevel = (AlignBitmapLevelGPU)referenceLevels[levelIndex];
@@ -162,65 +157,56 @@ internal sealed class ImageAlignerPyramidGpu : ImageAlignerPyramid
             partialResults.MemSetToZero();
             this.shiftScoreKernel(
                 totalThreads,
-                refLevel.GpuGrayscale.View, refLevel.GpuValidityMask.View,
-                candLevel.GpuGrayscale.View, candLevel.GpuValidityMask.View,
+                refLevel.GpuBitmap.View, refLevel.GpuMask.View,
+                candLevel.GpuBitmap.View, candLevel.GpuMask.View,
                 refLevel.Width, refLevel.Height,
                 gpuShiftsX.View, gpuShiftsY.View,
                 shiftCount,
                 partialResults.View);
 
-            // Transfer only partial sums back (tiny: shiftCount * 256 ScorePartial)
+            // Transfer only integer mismatch/valid partials back.
             var partials = partialResults.GetAsArray1D();
 
             for (var shiftIdx = 0; shiftIdx < shiftCount; shiftIdx++)
             {
-                double sumRef = 0, sumCand = 0, sumRef2 = 0, sumCand2 = 0, sumProd = 0;
+                var mismatch = 0;
                 var valid = 0;
                 var baseIdx = shiftIdx * ShiftScoreThreadsPerShift;
                 for (var t = 0; t < ShiftScoreThreadsPerShift; t++)
                 {
                     var p = partials[baseIdx + t];
-                    sumRef += p.SumRef;
-                    sumCand += p.SumCand;
-                    sumRef2 += p.SumRef2;
-                    sumCand2 += p.SumCand2;
-                    sumProd += p.SumProd;
+                    mismatch += p.Mismatch;
                     valid += p.Valid;
                 }
 
-                if (valid > 0)
-                {
-                    var corr = ComputeCorrelation(sumRef, sumCand, sumRef2, sumCand2, sumProd, valid);
-                    if (corr > double.MinValue / 2)
-                    {
-                        totalScores[shiftIdx] += corr * valid;
-                        totalValids[shiftIdx] += valid;
-                    }
-                }
+                totalMismatches[shiftIdx] += mismatch;
+                totalValids[shiftIdx] += valid;
             }
         }
 
-        var bestScore = double.MinValue;
+        var bestScore = double.MaxValue;
         var bestShiftX = centerX;
         var bestShiftY = centerY;
-        var bestValid = 0L;
+        var bestMismatch = 0;
+        var bestValid = 0;
 
         for (var i = 0; i < shiftCount; i++)
         {
             if (totalValids[i] == 0) continue;
-            var score = totalScores[i] / totalValids[i];
-            if (score > bestScore)
+            var score = (double)totalMismatches[i] / totalValids[i];
+            if (score < bestScore)
             {
                 bestScore = score;
                 bestShiftX = centerX + (i % stride) - radius;
                 bestShiftY = centerY + (i / stride) - radius;
+                bestMismatch = totalMismatches[i];
                 bestValid = totalValids[i];
             }
         }
 
         return bestValid == 0
             ? new AlignShiftScore(centerX, centerY, 0, 1)
-            : new AlignShiftScore(bestShiftX, bestShiftY, (int)Math.Clamp((1d - bestScore) * 1_000_000d, 0d, int.MaxValue), (int)Math.Min(bestValid, int.MaxValue));
+            : new AlignShiftScore(bestShiftX, bestShiftY, bestMismatch, bestValid);
     }
 
     private static (double Correlation, int Valid) ScoreGrayscaleCorrelation(byte[] reference, byte[] referenceMask, byte[] candidate, byte[] candidateMask, int width, int height,
@@ -686,7 +672,7 @@ internal sealed class ImageAlignerPyramidGpu : ImageAlignerPyramid
         var overlapH = height - XMath.Abs(shiftY);
         if (overlapW <= 0 || overlapH <= 0) return;
 
-        double sumRef = 0, sumCand = 0, sumRef2 = 0, sumCand2 = 0, sumProd = 0;
+        var mismatch = 0;
         var valid = 0;
         var totalPixels = overlapW * overlapH;
 
@@ -696,37 +682,16 @@ internal sealed class ImageAlignerPyramidGpu : ImageAlignerPyramid
             var x = pixelIdx - y * overlapW;
             var refIdx = (startY + y) * width + startX + x;
             var candIdx = (candStartY + y) * width + candStartX + x;
-            if (refMask[refIdx] == 0 || candMask[candIdx] == 0) continue;
-
-            var rv = reference[refIdx];
-            var cv = candidate[candIdx];
-            sumRef += rv;
-            sumCand += cv;
-            sumRef2 += rv * rv;
-            sumCand2 += cv * cv;
-            sumProd += rv * cv;
-            valid++;
+            var validPixel = refMask[refIdx] & candMask[candIdx];
+            valid += validPixel;
+            mismatch += (reference[refIdx] ^ candidate[candIdx]) & validPixel;
         }
 
         var resultIdx = shiftIdx * ShiftScoreThreadsPerShift + threadInShift;
         var result = results[resultIdx];
-        result.SumRef = sumRef;
-        result.SumCand = sumCand;
-        result.SumRef2 = sumRef2;
-        result.SumCand2 = sumCand2;
-        result.SumProd = sumProd;
+        result.Mismatch = mismatch;
         result.Valid = valid;
         results[resultIdx] = result;
-    }
-
-    private static double ComputeCorrelation(double sumRef, double sumCand, double sumRef2, double sumCand2, double sumProd, int valid)
-    {
-        if (valid <= 1) return double.MinValue;
-        var refVar = sumRef2 - sumRef * sumRef / valid;
-        var candVar = sumCand2 - sumCand * sumCand / valid;
-        var denom = Math.Sqrt(refVar * candVar);
-        if (denom <= 1e-9) return double.MinValue;
-        return (sumProd - sumRef * sumCand / valid) / denom;
     }
 }
 

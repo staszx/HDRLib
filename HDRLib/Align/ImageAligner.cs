@@ -17,6 +17,11 @@ public abstract class ImageAligner
 /// </summary>
 protected IList<IImageProxy>? images;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether areas exposed by alignment are filled from the reference image.
+    /// </summary>
+    public bool FillOutsideWithReference { get; set; }
+
     #endregion
 
     #region Constructors
