@@ -11,12 +11,16 @@
     <Version>1.0.0</Version>
     <Authors>Stanislav Popov</Authors>
     <Company>Stanislav Popov</Company>
-    <Description>A high-performance C# library for creating and processing High Dynamic Range (HDR) images with CPU, SIMD, and GPU acceleration.</Description>
-    <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2026 Stanislav Popov</Copyright>
+    <Description>Create aligned, motion-aware HDR images from exposure brackets and tone-map single images in .NET 8. Includes automatic AVX2 SIMD acceleration, explicit ILGPU acceleration, and ImageSharp-based image I/O.</Description>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageTags>hdr;tone-mapping;image-processing;alignment;debevec;gpu;ilgpu;simd;avx</PackageTags>
-    <PackageProjectUrl>https://github.com/stas-pavlov/HDRLib</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/stas-pavlov/HDRLib</RepositoryUrl>
+    <PackageIcon>HDRLib.png</PackageIcon>
+    <PackageTags>hdr;tone-mapping;image-processing;alignment;debevec;gpu;ilgpu;simd;avx2;imagesharp</PackageTags>
+    <PackageProjectUrl>https://github.com/staszx/HDRLib</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/staszx/HDRLib</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>Initial NuGet release with Debevec HDR merging, motion-aware alignment, single-image tone mapping, AVX2 SIMD and explicit ILGPU acceleration.</PackageReleaseNotes>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
@@ -39,6 +43,16 @@
     <None Include="..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\LICENSE" Pack="true" PackagePath="\" />
     <None Include="..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+    <None Include="..\assets\HDRLib.png" Pack="true" PackagePath="\" />
+    <None Include="..\HDRLib.PixelProvider.ImageSharp\bin\$(Configuration)\$(TargetFramework)\HDRLib.PixelProvider.ImageSharp.dll"
+          Pack="true"
+          PackagePath="lib\$(TargetFramework)\" />
   </ItemGroup>
+
+  <Target Name="BuildBundledImageSharpProvider" BeforeTargets="GenerateNuspec">
+    <MSBuild Projects="..\HDRLib.PixelProvider.ImageSharp\HDRLib.PixelProvider.ImageSharp.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)" />
+  </Target>
 
 </Project>

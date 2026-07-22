@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)HDRLib.snk</AssemblyOriginatorKeyFile>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>
