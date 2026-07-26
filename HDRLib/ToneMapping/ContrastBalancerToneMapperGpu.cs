@@ -34,13 +34,23 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
     {
         var pixelCount = (int)gpuPixels.Length;
 
-        using var sum = this.accelerator.Allocate1D<float>(1);
+        using var sum = this.accelerator.Allocate1D<float>(2);
         sum.MemSetToZero();
         this.logSumKernel(pixelCount, gpuPixels, sum.View);
         this.accelerator.Synchronize();
-        var avgLum = GpuHelper.Exp(sum.GetAsArray1D()[0] / pixelCount);
+        var sums = sum.GetAsArray1D();
+        var avgLum = GpuHelper.Exp(sums[0] / pixelCount);
+        var arithmeticAvgLum = sums[1] / pixelCount;
+        var sceneScale = ToneMapperHdrExposure.ResolveSceneScale(
+            arithmeticAvgLum,
+            this.ForceToneMappingCore,
+            this.HdrSceneAverageBrightness);
+        var scaledAvgLum = avgLum * sceneScale;
 
-        var luminanceScale = XMath.Max(0f, this.settings.Luminance) * GpuHelper.Pow(2f, effectiveSettings.ExposureEV);
+        var luminanceScale = XMath.Max(0f, this.settings.Luminance) *
+                             GpuHelper.Pow(2f, effectiveSettings.ExposureEV);
+        var toneCompression = XMath.Max(this.settings.ToneCompression, 1e-3f) /
+                              XMath.Max(luminanceScale, Epsilon);
         var blackClip = XMath.Clamp(this.settings.BlackClip, 0f, 0.99f);
         var whiteClip = XMath.Clamp(this.settings.WhiteClip, blackClip + 1e-3f, 4f);
         var saturationRanges = this.settings.GetSaturationColorRanges();
@@ -50,11 +60,11 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
             this.applyKernel(
                 pixelCount,
                 gpuPixels,
-                avgLum,
+                scaledAvgLum,
                 GetBalanceStrength(this.settings, effectiveSettings, this.ForceToneMappingCore),
-                XMath.Max(this.settings.ToneCompression, 1e-3f),
+                toneCompression,
                 XMath.Max(this.settings.LightingEffect, 0f),
-                luminanceScale,
+                sceneScale,
                 blackClip,
                 whiteClip,
                 XMath.Max(effectiveSettings.Contrast, 0f),
@@ -69,11 +79,11 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
                 pixelCount,
                 gpuPixels,
                 this.SourcePixelsBeforeProcessing,
-                avgLum,
+                scaledAvgLum,
                 GetBalanceStrength(this.settings, effectiveSettings, this.ForceToneMappingCore),
-                XMath.Max(this.settings.ToneCompression, 1e-3f),
+                toneCompression,
                 XMath.Max(this.settings.LightingEffect, 0f),
-                luminanceScale,
+                sceneScale,
                 blackClip,
                 whiteClip,
                 XMath.Max(effectiveSettings.Contrast, 0f),
@@ -135,6 +145,7 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
     {
         var lum = XMath.Max(pixels[index].Light(), Epsilon);
         Atomic.Add(ref sum[0], GpuHelper.Log(lum));
+        Atomic.Add(ref sum[1], lum);
     }
 
     private static void ApplyKernel(
@@ -144,7 +155,7 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
         float strength,
         float toneCompression,
         float lightingEffect,
-        float luminanceScale,
+        float sceneScale,
         float blackClip,
         float whiteClip,
         float contrast,
@@ -153,12 +164,13 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
     {
         var rgb = pixels[index];
         var sourceLum = XMath.Max(rgb.Light(), Epsilon);
-        var normalizedLum = (sourceLum * luminanceScale) / ((sourceLum * luminanceScale) + toneCompression);
+        var workingLum = sourceLum * sceneScale;
+        var normalizedLum = workingLum / (workingLum + toneCompression);
         var adaptedLum = avgLum + ((normalizedLum - avgLum) * lightingEffect);
         adaptedLum = XMath.Clamp((adaptedLum - blackClip) / (whiteClip - blackClip), 0f, 1f);
         adaptedLum = XMath.Clamp(((adaptedLum - 0.5f) * contrast) + 0.5f, 0f, 1f);
         adaptedLum = XMath.Clamp(adaptedLum * brightness, 0f, 1f);
-        var mappedLum = sourceLum + ((adaptedLum - sourceLum) * strength);
+        var mappedLum = workingLum + ((adaptedLum - workingLum) * strength);
 
         var scale = mappedLum / sourceLum;
         rgb.Red *= scale;
@@ -183,7 +195,7 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
         float strength,
         float toneCompression,
         float lightingEffect,
-        float luminanceScale,
+        float sceneScale,
         float blackClip,
         float whiteClip,
         float contrast,
@@ -195,18 +207,20 @@ internal sealed class ContrastBalancerToneMapperGpu : ToneMapperGpu
         var rgb = pixels[index];
         var sourceRgb = sourcePixels[index];
         var sourceLum = XMath.Max(rgb.Light(), Epsilon);
-        var normalizedLum = (sourceLum * luminanceScale) / ((sourceLum * luminanceScale) + toneCompression);
+        var workingLum = sourceLum * sceneScale;
+        var normalizedLum = workingLum / (workingLum + toneCompression);
         var adaptedLum = avgLum + ((normalizedLum - avgLum) * lightingEffect);
         adaptedLum = XMath.Clamp((adaptedLum - blackClip) / (whiteClip - blackClip), 0f, 1f);
         adaptedLum = XMath.Clamp(((adaptedLum - 0.5f) * contrast) + 0.5f, 0f, 1f);
         adaptedLum = XMath.Clamp(adaptedLum * brightness, 0f, 1f);
-        var mappedLum = sourceLum + ((adaptedLum - sourceLum) * strength);
+        var mappedLum = workingLum + ((adaptedLum - workingLum) * strength);
 
         var scale = mappedLum / sourceLum;
         rgb.Red *= scale;
         rgb.Green *= scale;
         rgb.Blue *= scale;
 
+        sourceRgb *= sceneScale;
         var adjustedSaturation = ApplySaturationRanges(saturation, sourceRgb, ranges, rangeCount);
         rgb.Red = mappedLum + ((rgb.Red - mappedLum) * adjustedSaturation);
         rgb.Green = mappedLum + ((rgb.Green - mappedLum) * adjustedSaturation);

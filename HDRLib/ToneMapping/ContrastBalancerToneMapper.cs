@@ -32,17 +32,26 @@ internal sealed class ContrastBalancerToneMapper : ToneMapper
         var pixels = handle.Pointer;
 
         var logSum = 0.0f;
+        var luminanceSum = 0.0f;
         for (var i = 0; i < count; i++)
         {
             var lum = MathF.Max(pixels[i].Light(), Epsilon);
             logSum += MathF.Log(lum);
+            luminanceSum += lum;
         }
 
         var avgLum = MathF.Exp(logSum / count);
+        var arithmeticAvgLum = luminanceSum / count;
+        var sceneScale = ToneMapperHdrExposure.ResolveSceneScale(
+            arithmeticAvgLum,
+            this.ForceToneMappingCore,
+            this.HdrSceneAverageBrightness);
+        var scaledAvgLum = avgLum * sceneScale;
         var strength = GetBalanceStrength(this.settings, effectiveSettings, this.ForceToneMappingCore);
         var toneCompression = MathF.Max(this.settings.ToneCompression, 1e-3f);
         var lightingEffect = Math.Max(0f, this.settings.LightingEffect);
-        var luminanceScale = Math.Max(0f, this.settings.Luminance) * MathF.Pow(2f, effectiveSettings.ExposureEV);
+        var luminanceScale = Math.Max(0f, this.settings.Luminance) *
+                             MathF.Pow(2f, effectiveSettings.ExposureEV);
         var blackClip = Math.Clamp(this.settings.BlackClip, 0f, 0.99f);
         var whiteClip = Math.Clamp(this.settings.WhiteClip, blackClip + 1e-3f, 4f);
         var invClipRange = 1f / (whiteClip - blackClip);
@@ -55,15 +64,17 @@ internal sealed class ContrastBalancerToneMapper : ToneMapper
             var rgb = pixels[i];
             var sourceRgb = sourcePixels is null ? rgb : sourcePixels[i];
             var sourceLum = MathF.Max(rgb.Light(), Epsilon);
-            var normalizedLum = (sourceLum * luminanceScale) / (sourceLum * luminanceScale + toneCompression);
-            var adaptedLum = avgLum + ((normalizedLum - avgLum) * lightingEffect);
+            var workingLum = sourceLum * sceneScale;
+            var normalizedLum = (workingLum * luminanceScale) / (workingLum * luminanceScale + toneCompression);
+            var adaptedLum = scaledAvgLum + ((normalizedLum - scaledAvgLum) * lightingEffect);
             adaptedLum = ((adaptedLum - blackClip) * invClipRange);
             adaptedLum = Math.Clamp(((adaptedLum - 0.5f) * contrast) + 0.5f, 0f, 1f);
             adaptedLum = Math.Clamp(adaptedLum * brightness, 0f, 1f);
-            var mappedLum = sourceLum + ((adaptedLum - sourceLum) * strength);
+            var mappedLum = workingLum + ((adaptedLum - workingLum) * strength);
 
             var scale = mappedLum / sourceLum;
             rgb *= scale;
+            sourceRgb *= sceneScale;
             var adjustedSaturation = ApplySaturationRanges(saturation, sourceRgb, saturationRanges);
             rgb.Red = mappedLum + ((rgb.Red - mappedLum) * adjustedSaturation);
             rgb.Green = mappedLum + ((rgb.Green - mappedLum) * adjustedSaturation);

@@ -23,11 +23,20 @@ internal sealed class ContrastBalancerToneMapperSIMD : ToneMapperSIMD
         var pixelCount = width * height;
         var luminance = ToneMapperSIMDHelper.BuildLuminance(pixels[0], pixels[1], pixels[2], pixelCount);
         var avgLum = LogAverageClamped(luminance);
+        var arithmeticAvgLum = Average(luminance);
+        var sceneScale = ToneMapperHdrExposure.ResolveSceneScale(
+            arithmeticAvgLum,
+            this.ForceToneMappingCore,
+            this.HdrSceneAverageBrightness);
+        var scaledAvgLum = avgLum * sceneScale;
 
         var strength = Vector256.Create(GetBalanceStrength(this.settings, this.ForceToneMappingCore));
         var toneCompression = Vector256.Create(MathF.Max(this.settings.ToneCompression, 1e-3f));
         var lightingEffect = Vector256.Create(Math.Max(0f, this.settings.LightingEffect));
-        var luminanceScale = Vector256.Create(Math.Max(0f, this.settings.Luminance) * MathF.Pow(2f, this.Settings.ExposureEV));
+        var luminanceScale = Vector256.Create(
+            Math.Max(0f, this.settings.Luminance) *
+            MathF.Pow(2f, this.Settings.ExposureEV));
+        var inputScale = Vector256.Create(sceneScale);
         var blackClipValue = Math.Clamp(this.settings.BlackClip, 0f, 0.99f);
         var whiteClipValue = Math.Clamp(this.settings.WhiteClip, blackClipValue + 1e-3f, 4f);
         var blackClip = Vector256.Create(blackClipValue);
@@ -35,7 +44,7 @@ internal sealed class ContrastBalancerToneMapperSIMD : ToneMapperSIMD
         var contrast = Vector256.Create(Math.Max(0f, this.Settings.Contrast));
         var saturation = Vector256.Create(SaturationToMultiplier(this.Settings.Saturation));
         var brightness = Vector256.Create(Math.Max(0f, this.Settings.Brightness));
-        var avg = Vector256.Create(avgLum);
+        var avg = Vector256.Create(scaledAvgLum);
         var half = ToneMapperSIMDHelper.Half;
 
         Parallel.For(0, pixels[0].Length, i =>
@@ -49,14 +58,15 @@ internal sealed class ContrastBalancerToneMapperSIMD : ToneMapperSIMD
                     Avx.Multiply(b, ToneMapperSIMDHelper.Bw)),
                 ToneMapperSIMDHelper.Epsilon);
 
-            var scaledLum = Avx.Multiply(sourceLum, luminanceScale);
+            var workingLum = Avx.Multiply(sourceLum, inputScale);
+            var scaledLum = Avx.Multiply(workingLum, luminanceScale);
             var normalizedLum = Avx.Divide(scaledLum, Avx.Add(scaledLum, toneCompression));
             var adaptedLum = Avx.Add(avg, Avx.Multiply(Avx.Subtract(normalizedLum, avg), lightingEffect));
             adaptedLum = Avx.Multiply(Avx.Subtract(adaptedLum, blackClip), invClipRange);
             adaptedLum = ToneMapperSIMDHelper.Clamp01(Avx.Add(Avx.Multiply(Avx.Subtract(adaptedLum, half), contrast), half));
             adaptedLum = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(adaptedLum, brightness));
 
-            var mappedLum = Avx.Add(sourceLum, Avx.Multiply(Avx.Subtract(adaptedLum, sourceLum), strength));
+            var mappedLum = Avx.Add(workingLum, Avx.Multiply(Avx.Subtract(adaptedLum, workingLum), strength));
             var scale = Avx.Divide(mappedLum, sourceLum);
             r = Avx.Multiply(r, scale);
             g = Avx.Multiply(g, scale);
@@ -104,6 +114,22 @@ internal sealed class ContrastBalancerToneMapperSIMD : ToneMapperSIMD
         }
 
         return MathF.Exp(sum / luminance.Length);
+    }
+
+    private static float Average(float[] luminance)
+    {
+        if (luminance.Length == 0)
+        {
+            return 0f;
+        }
+
+        var sum = 0.0;
+        for (var i = 0; i < luminance.Length; i++)
+        {
+            sum += luminance[i];
+        }
+
+        return (float)(sum / luminance.Length);
     }
 
     private static float GetBalanceStrength(ContrastBalancerToneMapperSettings settings, bool forceToneMappingCore)

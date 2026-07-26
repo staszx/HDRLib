@@ -17,6 +17,30 @@ using HdrImage = HDRLib.Image.Image<HDRLib.Image.Rgb>;
 public class ContrastBalancerToneMapperTests
 {
     [Test]
+    public void ApplyHdrInPlace_IsInvariantToRadianceScale()
+    {
+        var settings = CreateSettings(
+            luminance: 1.25f,
+            toneCompression: 0.75f,
+            lightingEffect: 0.6f,
+            whiteClip: 1.35f,
+            blackClip: 0.05f);
+        settings.Strength = 0.85f;
+        settings.WhiteBalanceReferenceType = WhiteBalanceReferenceType.Auto;
+        var source = CreateSampleImage();
+        var scaledSource = Clone(source);
+        for (var i = 0; i < scaledSource.Pixels.Length; i++)
+        {
+            scaledSource.Pixels[i] *= 100f;
+        }
+
+        var expected = ApplyHdrCpu(settings, source, sceneAverageBrightness: 0.35f);
+        var actual = ApplyHdrCpu(settings, scaledSource, sceneAverageBrightness: 0.35f);
+
+        AssertImagesClose(expected, actual, 1e-5f);
+    }
+
+    [Test]
     public void ApplyInPlace_LuminanceChangesOutput()
     {
         var low = ApplyCpu(CreateSettings(luminance: 0.25f, toneCompression: 0.6f, lightingEffect: 1.0f), CreateSampleImage());
@@ -191,6 +215,33 @@ public class ContrastBalancerToneMapperTests
         var gpu = ApplyGpu(context, settings, Clone(source));
 
         AssertImagesClose(cpu, gpu, 2e-3f);
+    }
+
+    [Test]
+    public void ApplyHdrInPlaceGpu_AutoWhiteBalanceMatchesCpuWithoutClippingRadiance()
+    {
+        using var context = CreateGpuContextOrSkip();
+        var settings = CreateSettings(
+            luminance: 1.25f,
+            toneCompression: 0.75f,
+            lightingEffect: 0.6f,
+            whiteClip: 1.35f,
+            blackClip: 0.05f);
+        settings.WhiteBalanceReferenceType = WhiteBalanceReferenceType.Auto;
+        var source = CreateSampleImage();
+        for (var i = 0; i < source.Pixels.Length; i++)
+        {
+            source.Pixels[i] *= 100f;
+        }
+
+        var cpu = ApplyHdrCpu(settings, Clone(source), sceneAverageBrightness: 0.35f);
+        var gpu = ApplyHdrGpu(context, settings, Clone(source), sceneAverageBrightness: 0.35f);
+
+        AssertImagesClose(cpu, gpu, 2e-3f);
+        Assert.That(
+            gpu.Pixels.Max(pixel => MathF.Max(pixel.Red, MathF.Max(pixel.Green, pixel.Blue))) -
+            gpu.Pixels.Min(pixel => MathF.Min(pixel.Red, MathF.Min(pixel.Green, pixel.Blue))),
+            Is.GreaterThan(0.2f));
     }
 
     [Test]
@@ -559,6 +610,15 @@ public class ContrastBalancerToneMapperTests
         return image;
     }
 
+    private static HdrImage ApplyHdrCpu(
+        ContrastBalancerToneMapperSettings settings,
+        HdrImage image,
+        float sceneAverageBrightness)
+    {
+        ((ToneMapper)ToneMapperFactory.Create(settings)).ApplyHdrInPlace(image, sceneAverageBrightness);
+        return image;
+    }
+
     private static void AssertControlChangesOutput(Action<ContrastBalancerToneMapperSettings> configure, string controlName)
     {
         var source = CreateControlImage();
@@ -580,6 +640,20 @@ public class ContrastBalancerToneMapperTests
         using var pixels = context.Accelerator.Allocate1D<Rgb>(image.Pixels.Length);
         pixels.CopyFromCPU(image.Pixels);
         mapper.ApplyInPlace(pixels.View, image.Width, image.Height);
+        image.Pixels = pixels.GetAsArray1D();
+        return image;
+    }
+
+    private static HdrImage ApplyHdrGpu(
+        GpuContext context,
+        ContrastBalancerToneMapperSettings settings,
+        HdrImage image,
+        float sceneAverageBrightness)
+    {
+        var mapper = ToneMapperFactoryGpu.Create(context, settings);
+        using var pixels = context.Accelerator.Allocate1D<Rgb>(image.Pixels.Length);
+        pixels.CopyFromCPU(image.Pixels);
+        mapper.ApplyHdrInPlace(pixels.View, image.Width, image.Height, sceneAverageBrightness);
         image.Pixels = pixels.GetAsArray1D();
         return image;
     }

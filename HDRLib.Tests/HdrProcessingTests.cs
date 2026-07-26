@@ -121,12 +121,12 @@ public class HdrProcessingTests
             ["Natural CPU"] = "0A3D2FB4F501C926C701F64E3AEC5AFB3D5B3D60442B5268246DA43C99F25EBB",
             ["Natural SIMD"] = "0A3D2FB4F501C926C701F64E3AEC5AFB3D5B3D60442B5268246DA43C99F25EBB",
             ["Natural GPU"] = "622BA869EFF481E6F1317B893206C0FFFAB285A0930EEFF9576FF6EFBBA2DD8C",
-            ["ContrastBalancer CPU"] = "1B0E430D9BB4F5AAA85607FB4E220B5B45DEDA67973C49034A2A4FC98BFC3354",
-            ["ContrastBalancer SIMD"] = "1B0E430D9BB4F5AAA85607FB4E220B5B45DEDA67973C49034A2A4FC98BFC3354",
-            ["ContrastBalancer GPU"] = "1B0E430D9BB4F5AAA85607FB4E220B5B45DEDA67973C49034A2A4FC98BFC3354",
-            ["BrightnessBalancer CPU"] = "A7D0C63408CD3DB7B4E0936F1F07581E648D804409BC0F220A6BD9DFB0FF6243",
-            ["BrightnessBalancer SIMD"] = "A7D0C63408CD3DB7B4E0936F1F07581E648D804409BC0F220A6BD9DFB0FF6243",
-            ["BrightnessBalancer GPU"] = "A7D0C63408CD3DB7B4E0936F1F07581E648D804409BC0F220A6BD9DFB0FF6243"
+            ["ContrastBalancer CPU"] = "C55495E274218472F068C63DA1707D0008105F4D59FA2662B1DCCCD5F89D55A2",
+            ["ContrastBalancer SIMD"] = "C55495E274218472F068C63DA1707D0008105F4D59FA2662B1DCCCD5F89D55A2",
+            ["ContrastBalancer GPU"] = "C55495E274218472F068C63DA1707D0008105F4D59FA2662B1DCCCD5F89D55A2",
+            ["BrightnessBalancer CPU"] = "0DD6A8C1B8D6D6F5F767CAE9283AF44F9F0B18D1127081A6BF177FBA49C829E3",
+            ["BrightnessBalancer SIMD"] = "0DD6A8C1B8D6D6F5F767CAE9283AF44F9F0B18D1127081A6BF177FBA49C829E3",
+            ["BrightnessBalancer GPU"] = "0DD6A8C1B8D6D6F5F767CAE9283AF44F9F0B18D1127081A6BF177FBA49C829E3"
         };
 
         var modes = new List<ProcessingMode> { ProcessingMode.CPU, ProcessingMode.SIMD };
@@ -152,6 +152,43 @@ public class HdrProcessingTests
                 Assert.That(hash, Is.EqualTo(expectedHashes[$"{toneMapper.Name} {mode}"]), $"{toneMapper.Name} {mode}");
             }
         }
+    }
+
+    [Test]
+    public void ProcessHdrSeries_ContrastBalancerControlsChangeHdrOutput()
+    {
+        var neutral = new ContrastBalancerToneMapperSettings().MakeNeutral();
+        var adjusted = new ContrastBalancerToneMapperSettings
+        {
+            Strength = 0.9f,
+            ToneCompression = 0.55f,
+            LightingEffect = 0.65f,
+            Luminance = 1.8f,
+            WhiteClip = 1.35f,
+            BlackClip = 0.05f,
+            Contrast = 1.15f
+        };
+
+        var neutralOutput = ProcessHdrSeries(
+            GetSamplesPath(),
+            ["DSC_5299.JPG", "DSC_5300.JPG", "DSC_5301.JPG"],
+            align: false,
+            ProcessingMode.CPU,
+            neutral,
+            imageScale: 0.1f);
+        var adjustedOutput = ProcessHdrSeries(
+            GetSamplesPath(),
+            ["DSC_5299.JPG", "DSC_5300.JPG", "DSC_5301.JPG"],
+            align: false,
+            ProcessingMode.CPU,
+            adjusted,
+            imageScale: 0.1f);
+
+        var comparison = Compare(LoadFullImage(neutralOutput), LoadFullImage(adjustedOutput));
+        TestContext.Out.WriteLine(
+            $"ContrastBalancer HDR neutral->adjusted: mean={comparison.Mean:F3}, max={comparison.Max}, p99={comparison.P99}");
+
+        Assert.That(comparison.Mean, Is.GreaterThan(5.0), "ContrastBalancer controls should visibly change HDR output.");
     }
 
     [Test]
@@ -301,8 +338,13 @@ public class HdrProcessingTests
         TestContext.AddTestAttachment(outputPath);
         TestContext.AddTestAttachment(settingsPath);
 
+        var brightness = MeasureBrightness(image);
         Assert.That(File.Exists(outputPath), Is.True);
         Assert.That(File.Exists(settingsPath), Is.True);
+        Assert.That(
+            brightness.Max - brightness.Min,
+            Is.GreaterThan(80),
+            "ContrastBalancer HDR output should preserve visible scene detail instead of collapsing to a flat image.");
     }
 
     [Test]

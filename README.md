@@ -20,7 +20,7 @@ Source, issues, and releases: [github.com/staszx/HDRLib](https://github.com/stas
 ## Install
 
 ```powershell
-dotnet add package HDRLib --version 1.0.0
+dotnet add package HDRLib --version 1.0.1
 ```
 
 The package targets `net8.0` and contains both `HDRLib.dll` and the
@@ -49,6 +49,42 @@ different exposure times:
 `SampleCount` controls the number of points used to estimate the response curve.
 `SmoothFactor` regularizes that curve. `MotionFilterStrength` controls motion-mask
 sensitivity from `0` (disabled) to `100`; it is not a generic sharpening control.
+
+## Tone mappers
+
+HDRLib includes four tone mappers:
+
+- `NaturalToneMapperSettings` provides adaptive photographic compression with
+  configurable target gray, white point, and tonal-range compression.
+- `AcesFilmicTonemapperSettings` applies an ACES-style fitted filmic curve.
+- `ContrastBalancerToneMapperSettings` balances scene contrast with independent
+  compression, lighting, luminance, and clipping controls.
+- `BrightnessBalancerToneMapperSettings` balances overall scene brightness with
+  lighting and brightness-boost controls.
+
+All four support the scalar CPU, AVX2 SIMD, and explicit ILGPU processing paths.
+For a merged HDR bracket, the tone mapper receives floating-point scene radiance,
+which can be far above the display range of `0..1`. HDRLib normalizes that
+radiance using the bracket's measured scene brightness before display mapping.
+Automatic white balance preserves the HDR range and is applied consistently
+before tone mapping on every backend.
+
+SINGLE processing keeps its existing behavior: input is an ordinary display-range
+image, so tone mapping adjusts its appearance but does not reconstruct scene
+dynamic range that is absent from the source.
+
+### Release notes 1.0.1
+
+- Fixed flat gray ContrastBalancer output on HDR brackets with automatic white
+  balance enabled.
+- Fixed fully overexposed BrightnessBalancer output on high-scale HDR radiance.
+- Prevented white balance from clipping HDR channel values to `1.0` before tone
+  mapping.
+- Made white-balance ordering and calculations consistent across CPU, AVX2 SIMD,
+  and ILGPU implementations; invalid non-finite samples are excluded from
+  automatic white-balance statistics.
+- Added CPU/SIMD/GPU regression coverage for Natural, ACES Filmic,
+  ContrastBalancer, and BrightnessBalancer on large-range HDR input.
 
 ## Hardware acceleration
 

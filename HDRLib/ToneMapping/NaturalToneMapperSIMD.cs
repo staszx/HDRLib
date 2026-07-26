@@ -10,8 +10,6 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
 {
     private const float ToneBoostSensitivity = 1f;
     private readonly NaturalToneMapperSettings settings;
-    private readonly WhiteBalancerSIMD whiteBalancer = new();
-
     public NaturalToneMapperSIMD(NaturalToneMapperSettings settings) : base(settings)
     {
         this.settings = settings;
@@ -56,7 +54,6 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
                 ? ComputeBrightnessCompensation(this.settings.OutputMidGray, logAverage * exposureCompensation)
                 : 1f;
             ApplyLdrBypassAdjustments(pixels, exposureCompensation * ldrBrightnessCompensation);
-            ApplyWhiteBalanceIfEnabled(pixels, width, height);
             ApplyGamma(pixels);
             return;
         }
@@ -141,23 +138,7 @@ internal sealed class NaturalToneMapperSIMD : ToneMapperSIMD
             pixels[2][i] = ToneMapperSIMDHelper.Clamp01(b);
         }
 
-        ApplyWhiteBalanceIfEnabled(pixels, width, height);
         ApplyGamma(pixels);
-    }
-
-    private void ApplyWhiteBalanceIfEnabled(Vector256<float>[][] pixels, int width, int height)
-    {
-        if (this.settings.WhiteBalanceReferenceType == WhiteBalanceReferenceType.None)
-        {
-            return;
-        }
-
-        this.whiteBalancer.ApplyInPlace(
-            pixels,
-            width,
-            height,
-            this.settings.WhiteBalanceReferenceType,
-            this.settings.WhiteBalanceReferenceColor);
     }
 
     private void ApplyGamma(Vector256<float>[][] pixels)

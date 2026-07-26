@@ -122,7 +122,11 @@ protected ToneMapperSettings Settings { get; }
 
             if (this.Settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
             {
-                this.whiteBalancer.ApplyInPlace(gpuPixels, this.Settings.WhiteBalanceReferenceType, this.Settings.WhiteBalanceReferenceColor);
+                this.whiteBalancer.ApplyInPlace(
+                    gpuPixels,
+                    this.Settings.WhiteBalanceReferenceType,
+                    this.Settings.WhiteBalanceReferenceColor,
+                    preserveHdrRange: forceCore);
             }
 
             var effectiveSettings = this.BuildEffectiveSettings(gpuPixels);

@@ -23,13 +23,20 @@ internal sealed class BrightnessBalancerToneMapperGpu : ToneMapperGpu
         var pixelCount = (int)gpuPixels.Length;
         var pixels = gpuPixels.GetAsArray1D();
         var logSum = 0.0f;
+        var luminanceSum = 0.0f;
         for (var i = 0; i < pixelCount; i++)
         {
             var lum = MathF.Max(pixels[i].Light(), Epsilon);
             logSum += MathF.Log(lum);
+            luminanceSum += lum;
         }
 
         var avgLum = MathF.Exp(logSum / pixelCount);
+        var sceneScale = ToneMapperHdrExposure.ResolveSceneScale(
+            luminanceSum / pixelCount,
+            this.ForceToneMappingCore,
+            this.HdrSceneAverageBrightness);
+        var scaledAvgLum = avgLum * sceneScale;
         var strength = Math.Clamp(this.settings.Strength, 0f, 1f);
         var lighting = MathF.Max(0f, this.settings.Lighting);
         var brightnessBoost = MathF.Max(0f, this.settings.BrightnessBoost) * MathF.Max(effectiveSettings.Brightness, 0f);
@@ -45,18 +52,19 @@ internal sealed class BrightnessBalancerToneMapperGpu : ToneMapperGpu
         {
             var rgb = pixels[i];
             var sourceLum = MathF.Max(rgb.Light(), Epsilon);
-            var exposedLum = sourceLum * exposure;
+            var workingLum = sourceLum * sceneScale;
+            var exposedLum = workingLum * exposure;
             var normalizedLum = exposedLum / (1f + exposedLum);
-            var litLum = avgLum + ((normalizedLum - avgLum) * lighting);
+            var litLum = scaledAvgLum + ((normalizedLum - scaledAvgLum) * lighting);
 
             var balancedLum = Math.Clamp((litLum - blackClip) * invClipRange, 0f, 1f);
             balancedLum = Math.Clamp(((balancedLum - 0.5f) * contrast) + 0.5f, 0f, 1f);
 
             var clippedLum = hasBalanceControls
                 ? Math.Clamp(balancedLum * brightnessBoost, 0f, 1f)
-                : Math.Clamp(sourceLum * brightnessBoost, 0f, 1f);
+                : Math.Clamp(workingLum * brightnessBoost, 0f, 1f);
 
-            var mappedLum = sourceLum + ((clippedLum - sourceLum) * strength);
+            var mappedLum = workingLum + ((clippedLum - workingLum) * strength);
             var scale = mappedLum / sourceLum;
             rgb *= scale;
 

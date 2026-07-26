@@ -9,6 +9,8 @@ using Settings;
 
 internal abstract class ToneMapperSIMD
 {
+    private readonly WhiteBalancerSIMD whiteBalancer = new();
+
     protected ToneMapperSIMD(ToneMapperSettings settings)
     {
         this.Settings = settings;
@@ -41,6 +43,17 @@ internal abstract class ToneMapperSIMD
             if (applyCore && this.NormalizesInputRange)
             {
                 NormalizeInputRange(pixels, width * height);
+            }
+
+            if (this.Settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
+            {
+                this.whiteBalancer.ApplyInPlace(
+                    pixels,
+                    width,
+                    height,
+                    this.Settings.WhiteBalanceReferenceType,
+                    this.Settings.WhiteBalanceReferenceColor,
+                    preserveHdrRange: forceCore);
             }
 
             if (applyCore)

@@ -8,7 +8,7 @@
     <Configurations>Debug;Release</Configurations>
 
     <PackageId>HDRLib</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>Stanislav Popov</Authors>
     <Company>Stanislav Popov</Company>
     <Copyright>Copyright (c) 2026 Stanislav Popov</Copyright>
@@ -20,7 +20,7 @@
     <PackageProjectUrl>https://github.com/staszx/HDRLib</PackageProjectUrl>
     <RepositoryUrl>https://github.com/staszx/HDRLib</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageReleaseNotes>Initial NuGet release with Debevec HDR merging, motion-aware alignment, single-image tone mapping, AVX2 SIMD and explicit ILGPU acceleration.</PackageReleaseNotes>
+    <PackageReleaseNotes>Fix HDR radiance-scale handling in ContrastBalancer and BrightnessBalancer; preserve HDR values during automatic white balance; align white-balance behavior across CPU, AVX2 SIMD, and ILGPU backends; add cross-backend HDR regression coverage for all tone mappers.</PackageReleaseNotes>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>

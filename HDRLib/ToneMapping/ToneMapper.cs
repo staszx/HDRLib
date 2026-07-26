@@ -70,7 +70,11 @@ protected ToneMapper(ToneMapperSettings settings)
 
             if (this.Settings.WhiteBalanceReferenceType != WhiteBalanceReferenceType.None)
             {
-                this.whiteBalancer.ApplyInPlace(image, this.Settings.WhiteBalanceReferenceType, this.Settings.WhiteBalanceReferenceColor);
+                this.whiteBalancer.ApplyInPlace(
+                    image,
+                    this.Settings.WhiteBalanceReferenceType,
+                    this.Settings.WhiteBalanceReferenceColor,
+                    preserveHdrRange: forceCore);
             }
 
             var effectiveSettings = this.BuildEffectiveSettings(image);

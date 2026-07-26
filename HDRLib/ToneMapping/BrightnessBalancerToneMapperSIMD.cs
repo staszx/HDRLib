@@ -23,6 +23,12 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
         var pixelCount = width * height;
         var luminance = ToneMapperSIMDHelper.BuildLuminance(pixels[0], pixels[1], pixels[2], pixelCount);
         var avgLum = LogAverageClamped(luminance);
+        var arithmeticAvgLum = luminance.Average();
+        var sceneScaleScalar = ToneMapperHdrExposure.ResolveSceneScale(
+            arithmeticAvgLum,
+            this.ForceToneMappingCore,
+            this.HdrSceneAverageBrightness);
+        var scaledAvgLum = avgLum * sceneScaleScalar;
 
         var strength = Vector256.Create(Math.Clamp(this.settings.Strength, 0f, 1f));
         var lighting = Vector256.Create(MathF.Max(0f, this.settings.Lighting));
@@ -35,7 +41,8 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
         var exposure = Vector256.Create(MathF.Pow(2f, this.Settings.ExposureEV));
         var contrast = Vector256.Create(MathF.Max(0f, this.Settings.Contrast));
         var saturation = Vector256.Create(SaturationToMultiplier(this.Settings.Saturation));
-        var avg = Vector256.Create(avgLum);
+        var avg = Vector256.Create(scaledAvgLum);
+        var sceneScale = Vector256.Create(sceneScaleScalar);
         var half = ToneMapperSIMDHelper.Half;
 
         Parallel.For(0, pixels[0].Length, i =>
@@ -49,7 +56,8 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
                     Avx.Multiply(b, ToneMapperSIMDHelper.Bw)),
                 ToneMapperSIMDHelper.Epsilon);
 
-            var exposedLum = Avx.Multiply(sourceLum, exposure);
+            var workingLum = Avx.Multiply(sourceLum, sceneScale);
+            var exposedLum = Avx.Multiply(workingLum, exposure);
             var normalizedLum = Avx.Divide(exposedLum, Avx.Add(ToneMapperSIMDHelper.One, exposedLum));
             var litLum = Avx.Add(avg, Avx.Multiply(Avx.Subtract(normalizedLum, avg), lighting));
 
@@ -58,9 +66,9 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
 
             var clippedLum = hasBalanceControls
                 ? ToneMapperSIMDHelper.Clamp01(Avx.Multiply(balancedLum, brightnessBoost))
-                : ToneMapperSIMDHelper.Clamp01(Avx.Multiply(sourceLum, brightnessBoost));
+                : ToneMapperSIMDHelper.Clamp01(Avx.Multiply(workingLum, brightnessBoost));
 
-            var mappedLum = Avx.Add(sourceLum, Avx.Multiply(Avx.Subtract(clippedLum, sourceLum), strength));
+            var mappedLum = Avx.Add(workingLum, Avx.Multiply(Avx.Subtract(clippedLum, workingLum), strength));
             var scale = Avx.Divide(mappedLum, sourceLum);
             r = Avx.Multiply(r, scale);
             g = Avx.Multiply(g, scale);

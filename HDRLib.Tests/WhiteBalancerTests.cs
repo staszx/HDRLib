@@ -70,4 +70,58 @@ public class WhiteBalancerTests
             Assert.That(image.Pixels[0].Blue, Is.EqualTo(0.375f).Within(1e-5f));
         });
     }
+
+    [Test]
+    public void ApplyInPlace_PreserveHdrRange_DoesNotClipRadianceToOne()
+    {
+        var balancer = new WhiteBalancer();
+        var image = new Image<Rgb>(2, 1)
+        {
+            Pixels =
+            [
+                new Rgb(4f, 2f, 1f),
+                new Rgb(8f, 4f, 2f)
+            ]
+        };
+
+        balancer.ApplyInPlace(
+            image,
+            WhiteBalanceReferenceType.Auto,
+            default,
+            preserveHdrRange: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(image.Pixels[0].Red, Is.GreaterThan(1f));
+            Assert.That(image.Pixels[0].Green, Is.GreaterThan(1f));
+            Assert.That(image.Pixels[1].Blue, Is.GreaterThan(1f));
+        });
+    }
+
+    [Test]
+    public void ApplyInPlace_AutoWhiteBalance_IgnoresNonFinitePixelsWhenCalculatingScale()
+    {
+        var balancer = new WhiteBalancer();
+        var image = new Image<Rgb>(2, 1)
+        {
+            Pixels =
+            [
+                new Rgb(float.PositiveInfinity, float.NaN, float.NegativeInfinity),
+                new Rgb(4f, 2f, 1f)
+            ]
+        };
+
+        balancer.ApplyInPlace(
+            image,
+            WhiteBalanceReferenceType.Auto,
+            default,
+            preserveHdrRange: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(image.Pixels[1].Red, Is.EqualTo(3.2f).Within(1e-5f));
+            Assert.That(image.Pixels[1].Green, Is.EqualTo(2.3333333f).Within(1e-5f));
+            Assert.That(image.Pixels[1].Blue, Is.EqualTo(1.2f).Within(1e-5f));
+        });
+    }
 }

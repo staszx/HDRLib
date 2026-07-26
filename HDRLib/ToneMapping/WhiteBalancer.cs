@@ -12,7 +12,11 @@ internal sealed class WhiteBalancer : IHdrImageProcessor
         ApplyInPlace(image, WhiteBalanceReferenceType.Auto, default);
     }
 
-    public void ApplyInPlace(Image<Rgb> image, WhiteBalanceReferenceType referenceType, Rgb referenceColor)
+    public void ApplyInPlace(
+        Image<Rgb> image,
+        WhiteBalanceReferenceType referenceType,
+        Rgb referenceColor,
+        bool preserveHdrRange = false)
     {
         var pixels = image.Pixels;
         if (pixels.Length == 0)
@@ -23,12 +27,13 @@ internal sealed class WhiteBalancer : IHdrImageProcessor
         var eps = 1e-6f;
         var (scaleR, scaleG, scaleB) = GetScaleFactors(pixels, referenceType, referenceColor, eps);
 
+        var maxValue = preserveHdrRange ? float.MaxValue : 1f;
         for (var i = 0; i < pixels.Length; i++)
         {
             pixels[i].Update(
-                Math.Clamp(pixels[i].Red * scaleR, 0f, 1f),
-                Math.Clamp(pixels[i].Green * scaleG, 0f, 1f),
-                Math.Clamp(pixels[i].Blue * scaleB, 0f, 1f));
+                Math.Clamp(pixels[i].Red * scaleR, 0f, maxValue),
+                Math.Clamp(pixels[i].Green * scaleG, 0f, maxValue),
+                Math.Clamp(pixels[i].Blue * scaleB, 0f, maxValue));
         }
     }
 
@@ -43,16 +48,31 @@ internal sealed class WhiteBalancer : IHdrImageProcessor
             var sumR = 0d;
             var sumG = 0d;
             var sumB = 0d;
+            var validCount = 0;
             for (var i = 0; i < pixels.Length; i++)
             {
-                sumR += pixels[i].Red;
-                sumG += pixels[i].Green;
-                sumB += pixels[i].Blue;
+                var pixel = pixels[i];
+                if (!float.IsFinite(pixel.Red) ||
+                    !float.IsFinite(pixel.Green) ||
+                    !float.IsFinite(pixel.Blue))
+                {
+                    continue;
+                }
+
+                sumR += pixel.Red;
+                sumG += pixel.Green;
+                sumB += pixel.Blue;
+                validCount++;
             }
 
-            var avgR = (float)(sumR / pixels.Length);
-            var avgG = (float)(sumG / pixels.Length);
-            var avgB = (float)(sumB / pixels.Length);
+            if (validCount == 0)
+            {
+                return (1f, 1f, 1f);
+            }
+
+            var avgR = (float)(sumR / validCount);
+            var avgG = (float)(sumG / validCount);
+            var avgB = (float)(sumB / validCount);
             return WhiteBalanceHelper.GetScaleFactors(referenceType, avgR, avgG, avgB, eps);
         }
 
