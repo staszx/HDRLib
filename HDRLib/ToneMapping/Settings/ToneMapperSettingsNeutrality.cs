@@ -16,6 +16,7 @@ public static class ToneMapperSettingsNeutrality
             MathF.Abs(settings.MidtonesBoost - 1f) > Epsilon ||
             MathF.Abs(settings.HighlightsBoost - 1f) > Epsilon ||
             MathF.Abs(settings.Dehaze) > Epsilon ||
+            MathF.Abs(settings.Clarity) > Epsilon ||
             MathF.Abs(settings.LocalContrast) > Epsilon ||
             MathF.Abs(settings.Saturation) > Epsilon ||
             settings.GetSaturationColorRanges().Length != 0 ||
@@ -60,6 +61,7 @@ public static class ToneMapperSettingsNeutrality
         settings.MidtonesBoost = 1f;
         settings.HighlightsBoost = 1f;
         settings.Dehaze = 0f;
+        settings.Clarity = 0f;
         settings.LocalContrast = 0f;
         settings.LocalContrastRadius = 1;
         settings.Transparent = 0f;

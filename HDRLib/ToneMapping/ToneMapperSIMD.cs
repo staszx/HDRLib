@@ -18,6 +18,8 @@ internal abstract class ToneMapperSIMD
 
     protected ToneMapperSettings Settings { get; }
 
+    internal ImageAdjustSettings? LastAutoAdjustSettings { get; private set; }
+
     public void ApplyInPlace(Vector256<float>[][] pixels, int width, int height)
     {
         this.ApplyInPlace(pixels, width, height, forceCore: false);
@@ -30,6 +32,7 @@ internal abstract class ToneMapperSIMD
 
     private void ApplyInPlace(Vector256<float>[][] pixels, int width, int height, bool forceCore, float sceneAverageBrightness = float.NaN)
     {
+        this.LastAutoAdjustSettings = null;
         if (!forceCore && this.Settings.IsNeutral())
         {
             return;
@@ -61,13 +64,16 @@ internal abstract class ToneMapperSIMD
                 this.ApplyCoreInPlace(pixels, width, height);
             }
 
+            var auto = this.Settings.AutoAdjustEnabled ? ImageAnalyzerSIMD.Analyze(pixels) : null;
+            this.LastAutoAdjustSettings = auto;
             if (!this.AppliesToneBoostInternally)
             {
                 this.ApplyToneBoostInPlace(pixels);
             }
 
-            DehazeProcessorSIMD.ApplyInPlace(pixels, this.Settings.Dehaze);
-            this.ApplyPostProcessInPlace(pixels, includeCommonSettings: !applyCore);
+            DehazeProcessorSIMD.ApplyInPlace(pixels, CombineDetailAmount(this.Settings.Dehaze, auto?.Dehaze));
+            this.ApplySpatialDetailInPlace(pixels, width, height, auto);
+            this.ApplyPostProcessInPlace(pixels, includeCommonSettings: !applyCore, auto: auto);
         }
         finally
         {
@@ -162,14 +168,13 @@ internal abstract class ToneMapperSIMD
         });
     }
 
-    private void ApplyPostProcessInPlace(Vector256<float>[][] pixels, bool includeCommonSettings)
+    private void ApplyPostProcessInPlace(Vector256<float>[][] pixels, bool includeCommonSettings, ImageAdjustSettings? auto)
     {
         var postProcessSettings = includeCommonSettings
             ? this.Settings.ToPostProcessSettings().Combine(this.Settings.PostProcess)
             : this.Settings.PostProcess;
-        if (this.Settings.AutoAdjustEnabled)
+        if (auto is not null)
         {
-            var auto = ImageAnalyzerSIMD.Analyze(pixels);
             postProcessSettings = postProcessSettings.WithAutoAdjust(auto);
         }
 
@@ -180,6 +185,26 @@ internal abstract class ToneMapperSIMD
 
         var labPostProcessor = new LabPostProcessorSIMD(postProcessSettings);
         labPostProcessor.ApplyInPlace(pixels);
+    }
+
+    private void ApplySpatialDetailInPlace(Vector256<float>[][] pixels, int width, int height, ImageAdjustSettings? auto)
+    {
+        var localContrast = CombineDetailAmount(this.Settings.LocalContrast, auto?.LocalContrast);
+        var clarity = CombineDetailAmount(this.Settings.Clarity, auto?.Clarity);
+        if (MathF.Abs(localContrast) <= 1e-6f && MathF.Abs(clarity) <= 1e-6f)
+        {
+            return;
+        }
+
+        var image = ToneMapperSIMDHelper.ToImage(pixels, width, height);
+        LocalContrastProcessor.ApplyInPlace(image, localContrast, this.Settings.LocalContrastRadius);
+        ClarityProcessor.ApplyInPlace(image, clarity);
+        ToneMapperSIMDHelper.FromImage(image, pixels);
+    }
+
+    private static float CombineDetailAmount(float manual, float? automatic)
+    {
+        return Math.Clamp(manual + (automatic ?? 0f), -100f, 100f);
     }
 
     private static Vector256<float> Abs(Vector256<float> value)

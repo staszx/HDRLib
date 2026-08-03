@@ -92,6 +92,7 @@ internal sealed class ImageAnalyzerGpu
         saturation = Math.Clamp(saturation, SaturationMin, SaturationMax);
 
         var highlights = ComputeHighlightCompression(hist, total);
+        var detail = ImageAnalyzer.ComputeDetailAdjustments(contrast, drStops);
         return new ImageAdjustSettings
         {
             ExposureEV = exposureEV,
@@ -100,6 +101,9 @@ internal sealed class ImageAnalyzerGpu
             Shadows = shadows,
             Midtones = midtones,
             Saturation = saturation,
+            Dehaze = detail.Dehaze,
+            Clarity = detail.Clarity,
+            LocalContrast = detail.LocalContrast,
             HighlightCompression = highlights,
             DynamicRangeStops = drStops
         };

@@ -30,6 +30,8 @@ protected ToneMapper(ToneMapperSettings settings)
 
     protected Rgb[]? SourcePixelsBeforeProcessing { get; private set; }
 
+    internal ImageAdjustSettings? LastAutoAdjustSettings { get; private set; }
+
     public void ApplyInPlace(Image<Rgb> image)
     {
         this.ApplyInPlace(image, forceCore: false);
@@ -42,6 +44,7 @@ protected ToneMapper(ToneMapperSettings settings)
 
     private void ApplyInPlace(Image<Rgb> image, bool forceCore, float sceneAverageBrightness = float.NaN)
     {
+        this.LastAutoAdjustSettings = null;
         if (image.Length == 0)
         {
             return;
@@ -89,11 +92,17 @@ protected ToneMapper(ToneMapperSettings settings)
                 originalPixels = CreateBlendSource(image.Pixels, this.Settings.Transparent);
             }
 
+            var auto = this.Settings.AutoAdjustEnabled ? ImageAnalyzer.Analyze(image.Pixels) : null;
+            this.LastAutoAdjustSettings = auto;
             ToneBoostProcessor.ApplyInPlace(image.Pixels, this.Settings.ShadowsBoost, this.Settings.MidtonesBoost, this.Settings.HighlightsBoost);
-            DehazeProcessor.ApplyInPlace(image, this.Settings.Dehaze);
-            LocalContrastProcessor.ApplyInPlace(image, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
+            DehazeProcessor.ApplyInPlace(image, CombineDetailAmount(this.Settings.Dehaze, auto?.Dehaze));
+            LocalContrastProcessor.ApplyInPlace(
+                image,
+                CombineDetailAmount(effectiveSettings.LocalContrast, auto?.LocalContrast),
+                effectiveSettings.LocalContrastRadius);
+            ClarityProcessor.ApplyInPlace(image, CombineDetailAmount(this.Settings.Clarity, auto?.Clarity));
             this.ApplyColorTemperature(image);
-            this.ApplyPostProcess(image, includeCommonSettings: !applyCore);
+            this.ApplyPostProcess(image, includeCommonSettings: !applyCore, auto: auto);
             if (!applyCore)
             {
                 SaturationRangeProcessor.ApplyInPlace(image.Pixels, this.SourcePixelsBeforeProcessing, saturationRanges);
@@ -215,14 +224,13 @@ protected static float SaturationToMultiplier(float saturation)
             : 1f + (value / 50f);
     }
 
-    private void ApplyPostProcess(Image<Rgb> image, bool includeCommonSettings)
+    private void ApplyPostProcess(Image<Rgb> image, bool includeCommonSettings, ImageAdjustSettings? auto)
     {
         var postProcessSettings = includeCommonSettings
             ? this.Settings.ToPostProcessSettings().Combine(this.Settings.PostProcess)
             : this.Settings.PostProcess;
-        if (this.Settings.AutoAdjustEnabled)
+        if (auto is not null)
         {
-            var auto = ImageAnalyzer.Analyze(image.Pixels);
             postProcessSettings = postProcessSettings.WithAutoAdjust(auto);
         }
 
@@ -233,6 +241,11 @@ protected static float SaturationToMultiplier(float saturation)
 
         var labProcessor = new LabPostProcessor(postProcessSettings);
         labProcessor.ApplyInPlace(image);
+    }
+
+    private static float CombineDetailAmount(float manual, float? automatic)
+    {
+        return Math.Clamp(manual + (automatic ?? 0f), -100f, 100f);
     }
 
     private void ApplyColorTemperature(Image<Rgb> image)

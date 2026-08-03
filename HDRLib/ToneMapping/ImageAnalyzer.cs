@@ -15,6 +15,9 @@ public sealed class ImageAdjustSettings
     public float Shadows { get; init; } = 1.0f;
     public float Midtones { get; init; } = 1.0f;
     public float Saturation { get; init; } = 1.0f;
+    public float Dehaze { get; init; }
+    public float Clarity { get; init; }
+    public float LocalContrast { get; init; }
     public float HighlightCompression { get; init; } = 1.0f;
     public float DynamicRangeStops { get; init; }
 
@@ -40,13 +43,14 @@ public sealed class ImageAdjustSettings
     {
         return $"EV={this.ExposureEV:F3}, Contrast={this.Contrast:F3}, Brightness={this.Brightness:F3}, " +
                $"Shadows={this.Shadows:F3}, Midtones={this.Midtones:F3}, Saturation={this.Saturation:F3}, " +
+               $"Dehaze={this.Dehaze:F1}, Clarity={this.Clarity:F1}, LocalContrast={this.LocalContrast:F1}, " +
                $"HighlightCompression={this.HighlightCompression:F3}, DR={this.DynamicRangeStops:F3}";
     }
 
     #endregion
 }
 
-internal static class ImageAnalyzer
+public static class ImageAnalyzer
 {
     #region Constants
 
@@ -110,6 +114,7 @@ internal static class ImageAnalyzer
         saturation = Math.Clamp(saturation, SaturationMin, SaturationMax);
 
         var highlights = ComputeHighlightCompression(hist, total);
+        var detail = ComputeDetailAdjustments(contrast, drStops);
         return new ImageAdjustSettings
         {
             ExposureEV = exposureEV,
@@ -118,9 +123,25 @@ internal static class ImageAnalyzer
             Shadows = shadows,
             Midtones = midtones,
             Saturation = saturation,
+            Dehaze = detail.Dehaze,
+            Clarity = detail.Clarity,
+            LocalContrast = detail.LocalContrast,
             HighlightCompression = highlights,
             DynamicRangeStops = drStops
         };
+    }
+
+    internal static (float Dehaze, float Clarity, float LocalContrast) ComputeDetailAdjustments(float contrast, float dynamicRangeStops)
+    {
+        // Keep automatically inferred detail adjustments deliberately conservative: histogram
+        // statistics can identify flat tonal distributions, but cannot distinguish haze from
+        // intentionally soft rendering with complete certainty.
+        var lowDynamicRange = Math.Clamp((6f - dynamicRangeStops) / 6f, 0f, 1f);
+        var contrastNeed = Math.Clamp((contrast - 1f) / 0.6f, 0f, 1f);
+        return (
+            Dehaze: 8f * lowDynamicRange,
+            Clarity: 12f * contrastNeed,
+            LocalContrast: 8f * contrastNeed);
     }
 
     private static ImageAdjustSettings CreateNeutralSettings()

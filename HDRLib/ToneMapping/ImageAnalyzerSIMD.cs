@@ -75,6 +75,7 @@ internal static class ImageAnalyzerSIMD
         saturation = Math.Clamp(saturation, SaturationMin, SaturationMax);
 
         var hc = ComputeHighlightCompression(hist, total);
+        var detail = ImageAnalyzer.ComputeDetailAdjustments(contrast, drStops);
         return new ImageAdjustSettings
         {
             ExposureEV = exposureEV,
@@ -83,6 +84,9 @@ internal static class ImageAnalyzerSIMD
             Shadows = shadows,
             Midtones = midtones,
             Saturation = saturation,
+            Dehaze = detail.Dehaze,
+            Clarity = detail.Clarity,
+            LocalContrast = detail.LocalContrast,
             HighlightCompression = hc,
             DynamicRangeStops = drStops
         };

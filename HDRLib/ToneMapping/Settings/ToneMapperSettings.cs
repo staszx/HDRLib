@@ -55,6 +55,10 @@ public float HighlightsBoost { get; set; } = 1.0f;
 /// </summary>
 public float Dehaze { get; set; } = 0.0f;
     /// <summary>
+/// Gets or sets the midtone detail enhancement amount in the range [-100, 100].
+/// </summary>
+public float Clarity { get; set; } = 0.0f;
+    /// <summary>
 /// Gets or sets the local contrast amount.
 /// </summary>
 public float LocalContrast { get; set; } = 0.0f;

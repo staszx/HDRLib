@@ -16,7 +16,7 @@ public class ToneMapperHdrBackendTests
 {
     private static IEnumerable<TestCaseData> ToneMapperSettings()
     {
-        yield return new TestCaseData(new AcesFilmicTonemapperSettings { Key = 0.32f, Gamma = 1.2f })
+        yield return new TestCaseData(new AcesFilmicTonemapperSettings { Key = 0.32f, Gamma = 1.2f, Clarity = 35f })
             .SetName("ApplyHdrInPlace_AcesFilmic_PreservesDetailsAcrossBackends");
         yield return new TestCaseData(new NaturalToneMapperSettings
         {

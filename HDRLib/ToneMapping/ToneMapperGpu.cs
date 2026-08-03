@@ -20,7 +20,7 @@ internal abstract class ToneMapperGpu : IToneMapperGpu
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float> colorTemperatureKernel;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float> toneBoostKernel;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, int, int> localContrastHorizontalKernel;
-    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, int, int, float, int> localContrastVerticalKernel;
+    private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, int, int, float, int, int> localContrastVerticalKernel;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>> copyKernel;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, float> blendKernel;
     private readonly Action<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<float, Stride1D.Dense>> inputStatsKernel;
@@ -45,7 +45,7 @@ protected ToneMapperGpu(GpuContext context, ToneMapperSettings settings)
         this.colorTemperatureKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float>(ApplyColorTemperatureKernel);
         this.toneBoostKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, float, float, float>(ApplyToneBoostKernel);
         this.localContrastHorizontalKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, int, int>(ApplyLocalContrastHorizontalKernel);
-        this.localContrastVerticalKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, int, int, float, int>(ApplyLocalContrastVerticalKernel);
+        this.localContrastVerticalKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, int, int, float, int, int>(ApplyLocalContrastVerticalKernel);
         this.copyKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>>(CopyKernel);
         this.blendKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<Rgb, Stride1D.Dense>, float>(BlendKernel);
         this.inputStatsKernel = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Rgb, Stride1D.Dense>, ArrayView1D<float, Stride1D.Dense>>(ToneMapperUtilities.InputStatsKernel);
@@ -57,6 +57,8 @@ protected ToneMapperGpu(GpuContext context, ToneMapperSettings settings)
 /// Gets the tone‑mapper configuration settings.
 /// </summary>
 protected ToneMapperSettings Settings { get; }
+
+    public ImageAdjustSettings? LastAutoAdjustSettings { get; private set; }
 
     protected ArrayView1D<Rgb, Stride1D.Dense> SourcePixelsBeforeProcessing { get; private set; }
 
@@ -83,6 +85,7 @@ protected ToneMapperSettings Settings { get; }
 
     private void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height, bool forceCore, float sceneAverageBrightness = float.NaN)
     {
+        this.LastAutoAdjustSettings = null;
         if (gpuPixels.Length == 0)
         {
             return;
@@ -140,11 +143,26 @@ protected ToneMapperSettings Settings { get; }
                 this.copyKernel((int)gpuPixels.Length, gpuPixels, original);
             }
 
+            var auto = this.Settings.AutoAdjustEnabled ? this.imageAnalyzer.Analyze(gpuPixels) : null;
+            this.LastAutoAdjustSettings = auto;
             this.ApplyToneBoost(gpuPixels);
-            this.dehazeProcessor.ApplyInPlace(gpuPixels, this.Settings.Dehaze);
-            this.ApplyLocalContrast(gpuPixels, width, height, effectiveSettings.LocalContrast, effectiveSettings.LocalContrastRadius);
+            this.dehazeProcessor.ApplyInPlace(gpuPixels, CombineDetailAmount(this.Settings.Dehaze, auto?.Dehaze));
+            this.ApplyLocalContrast(
+                gpuPixels,
+                width,
+                height,
+                CombineDetailAmount(effectiveSettings.LocalContrast, auto?.LocalContrast),
+                effectiveSettings.LocalContrastRadius,
+                midtoneWeighted: false);
+            this.ApplyLocalContrast(
+                gpuPixels,
+                width,
+                height,
+                CombineDetailAmount(this.Settings.Clarity, auto?.Clarity),
+                ClarityProcessor.ResolveRadius(width, height),
+                midtoneWeighted: true);
             this.ApplyColorTemperature(gpuPixels);
-            this.ApplyPostProcess(gpuPixels, includeCommonSettings: !applyCore);
+            this.ApplyPostProcess(gpuPixels, includeCommonSettings: !applyCore, auto: auto);
             if (!applyCore)
             {
                 this.ApplySaturationRanges(gpuPixels, saturationRanges);
@@ -211,14 +229,13 @@ protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels,
                MathF.Abs(this.Settings.Gamma - 1f) > 1e-5f;
     }
 
-    private void ApplyPostProcess(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, bool includeCommonSettings)
+    private void ApplyPostProcess(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, bool includeCommonSettings, ImageAdjustSettings? auto)
     {
         var postProcessSettings = includeCommonSettings
             ? this.Settings.ToPostProcessSettings().Combine(this.Settings.PostProcess)
             : this.Settings.PostProcess;
-        if (this.Settings.AutoAdjustEnabled)
+        if (auto is not null)
         {
-            var auto = this.imageAnalyzer.Analyze(gpuPixels);
             postProcessSettings = postProcessSettings.WithAutoAdjust(auto);
         }
 
@@ -293,7 +310,7 @@ protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels,
         this.toneBoostKernel((int)gpuPixels.Length, gpuPixels, this.Settings.ShadowsBoost, this.Settings.MidtonesBoost, this.Settings.HighlightsBoost);
     }
 
-    private void ApplyLocalContrast(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height, float amount, int radius)
+    private void ApplyLocalContrast(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels, int width, int height, float amount, int radius, bool midtoneWeighted)
     {
         var strength = Math.Clamp(amount / 100f, -1f, 1f);
         var effectiveRadius = Math.Clamp(radius, 0, 100);
@@ -309,7 +326,7 @@ protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels,
 
         var horizontalSums = this.GetLocalContrastBuffer(gpuPixels.Length).View;
         this.localContrastHorizontalKernel((int)gpuPixels.Length, gpuPixels, horizontalSums, width, effectiveRadius);
-        this.localContrastVerticalKernel((int)gpuPixels.Length, gpuPixels, horizontalSums, gpuPixels, width, height, strength, effectiveRadius);
+        this.localContrastVerticalKernel((int)gpuPixels.Length, gpuPixels, horizontalSums, gpuPixels, width, height, strength, effectiveRadius, midtoneWeighted ? 1 : 0);
     }
 
     private MemoryBuffer1D<Rgb, Stride1D.Dense> GetBlendBuffer(long length)
@@ -436,7 +453,8 @@ protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels,
         int width,
         int height,
         float strength,
-        int radius)
+        int radius,
+        int midtoneWeighted)
     {
         var i = (int)index;
         var x = i % width;
@@ -456,6 +474,13 @@ protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels,
         }
 
         var p = source[index];
+        if (midtoneWeighted != 0)
+        {
+            var luminance = XMath.Clamp(p.Light(), 0f, 1f);
+            var midtoneWeight = XMath.Clamp(1f - (XMath.Abs(luminance - 0.5f) * 2f), 0f, 1f);
+            strength *= midtoneWeight;
+        }
+
         var invSamples = 1f / (horizontalSamples * verticalSamples);
         var blurR = sumR * invSamples;
         var blurG = sumG * invSamples;
@@ -465,6 +490,11 @@ protected abstract void ApplyInPlace(ArrayView1D<Rgb, Stride1D.Dense> gpuPixels,
         p.Green = XMath.Clamp(p.Green + ((p.Green - blurG) * strength), 0f, 1f);
         p.Blue = XMath.Clamp(p.Blue + ((p.Blue - blurB) * strength), 0f, 1f);
         target[index] = p;
+    }
+
+    private static float CombineDetailAmount(float manual, float? automatic)
+    {
+        return Math.Clamp(manual + (automatic ?? 0f), -100f, 100f);
     }
 
     protected readonly record struct EffectiveToneMapperSettings(float ExposureEV, float Brightness, float Contrast, float LocalContrast, int LocalContrastRadius, float Saturation, float Gamma);

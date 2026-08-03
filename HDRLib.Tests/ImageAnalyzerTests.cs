@@ -37,6 +37,30 @@ public class ImageAnalyzerTests
     }
 
     [Test]
+    public void Analyze_FlatImage_ComputesConservativeDetailAdjustments()
+    {
+        var pixels = Enumerable.Repeat(new Rgb(0.45f, 0.45f, 0.45f), 100).ToArray();
+
+        var auto = ImageAnalyzer.Analyze(pixels);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(auto.Dehaze, Is.InRange(0f, 8f));
+            Assert.That(auto.Clarity, Is.InRange(0f, 12f));
+            Assert.That(auto.LocalContrast, Is.InRange(0f, 8f));
+            Assert.That(auto.Clarity, Is.GreaterThan(0f));
+        });
+    }
+
+    [Test]
+    public void Analyze_IsPublicAndReturnsInspectableSettings()
+    {
+        var auto = ImageAnalyzer.Analyze([new Rgb(0.1f, 0.2f, 0.3f), new Rgb(0.8f, 0.7f, 0.6f)]);
+
+        Assert.That(auto.ToString(), Does.Contain("Clarity="));
+    }
+
+    [Test]
     public void Analyze_ImageWithLargeHighlightMass_ComputesHighlightCompressionButDoesNotAutoApplyIt()
     {
         var pixels = Enumerable.Repeat(new Rgb(0.95f, 0.95f, 0.95f), 40)

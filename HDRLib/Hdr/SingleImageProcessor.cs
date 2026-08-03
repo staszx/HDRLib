@@ -35,6 +35,8 @@ public sealed class SingleImageProcessor : IDisposable
         this.LoadSource(source);
     }
 
+    public ImageAdjustSettings? LastAutoAdjustSettings { get; private set; }
+
     public void LoadSource(IImageProxy source)
     {
         _ = source ?? throw new ArgumentNullException(nameof(source));
@@ -56,6 +58,7 @@ public sealed class SingleImageProcessor : IDisposable
 
     public void Process(ToneMapperSettings toneMapperSettings, GpuContext? context = null)
     {
+        this.LastAutoAdjustSettings = null;
         if (this.sourcePixels.Length == 0 && this.gpuSourcePixels is null)
         {
             throw new InvalidOperationException("Source image is not loaded.");
@@ -273,11 +276,14 @@ public sealed class SingleImageProcessor : IDisposable
     {
         var image = new Image<Rgb>(this.width, this.height)
         {
+            Width = this.width,
+            Height = this.height,
             Pixels = this.pixels
         };
 
-        var toneMapper = ToneMapperFactory.Create(toneMapperSettings);
+        var toneMapper = (ToneMapper)ToneMapperFactory.Create(toneMapperSettings);
         toneMapper.ApplyInPlace(image);
+        this.LastAutoAdjustSettings = toneMapper.LastAutoAdjustSettings;
 
         ScaleTo255(image.Pixels);
         this.pixels = image.Pixels;
@@ -289,12 +295,7 @@ public sealed class SingleImageProcessor : IDisposable
 
         var toneMapper = ToneMapperFactorySIMD.Create(toneMapperSettings);
         toneMapper.ApplyInPlace(simdPixels, this.width, this.height);
-        if (toneMapperSettings is AcesFilmicTonemapperSettings or NaturalToneMapperSettings)
-        {
-            var localContrastPixels = FromSimd(simdPixels, this.width * this.height);
-            LocalContrastProcessor.ApplyInPlace(localContrastPixels, this.width, this.height, toneMapperSettings.LocalContrast, toneMapperSettings.LocalContrastRadius);
-            simdPixels = ToSimd(localContrastPixels);
-        }
+        this.LastAutoAdjustSettings = toneMapper.LastAutoAdjustSettings;
 
         var restored = FromSimd(simdPixels, this.width * this.height);
         ApplyBlending(restored, this.sourcePixels, toneMapperSettings.Transparent);
@@ -317,6 +318,7 @@ public sealed class SingleImageProcessor : IDisposable
         context.Processor.Copy((int)this.gpuSourcePixels.Length, this.gpuSourcePixels, this.gpuPixels);
 
         toneMapper.ApplyInPlace(this.gpuPixels.View, this.width, this.height);
+        this.LastAutoAdjustSettings = toneMapper.LastAutoAdjustSettings;
         context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(255, 255, 255));
         accelerator.Synchronize();
 
