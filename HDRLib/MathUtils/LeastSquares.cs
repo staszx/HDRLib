@@ -4,6 +4,8 @@ namespace HDRLib.MathUtils
 {
     using System.Numerics;
     using System.Runtime.CompilerServices;
+    using System.Runtime.Intrinsics;
+    using System.Runtime.Intrinsics.X86;
 
     /// <summary>
 /// Provides methods for solving linear least‑squares problems using various algorithms.
@@ -253,9 +255,184 @@ public static double[] FastLeastSquares(double[][] a, double[] b, int rowCount)
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        internal static double[] SolveLinearSystem(double[] matrix, double[] rightHandSide, int size, bool useAvx)
+        {
+            if (matrix.Length != size * size)
+            {
+                throw new ArgumentException("Matrix dimensions do not match the requested system size.", nameof(matrix));
+            }
+
+            if (rightHandSide.Length != size)
+            {
+                throw new ArgumentException("Right-hand side dimensions do not match the requested system size.", nameof(rightHandSide));
+            }
+
+            return useAvx && Avx.IsSupported
+                ? SolveGaussianAvx(matrix, rightHandSide, size)
+                : SolveGaussianScalar(matrix, rightHandSide, size);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         internal static double[] SolveLinearSystem(double[][] a, double[] b)
         {
             return SolveGaussian(a, b);
+        }
+
+        private static double[] SolveGaussianScalar(double[] matrix, double[] rightHandSide, int size)
+        {
+            var solution = new double[size];
+            for (var pivot = 0; pivot < size; pivot++)
+            {
+                var maxRow = FindPivotRow(matrix, size, pivot);
+                SwapRows(matrix, rightHandSide, size, pivot, maxRow);
+
+                var pivotOffset = pivot * size;
+                var diagonal = matrix[pivotOffset + pivot];
+                if (Math.Abs(diagonal) < 1e-15)
+                {
+                    diagonal = 1e-15;
+                }
+
+                for (var column = pivot; column < size; column++)
+                {
+                    matrix[pivotOffset + column] /= diagonal;
+                }
+
+                rightHandSide[pivot] /= diagonal;
+                for (var row = pivot + 1; row < size; row++)
+                {
+                    var rowOffset = row * size;
+                    var factor = matrix[rowOffset + pivot];
+                    if (factor == 0d)
+                    {
+                        continue;
+                    }
+
+                    for (var column = pivot; column < size; column++)
+                    {
+                        matrix[rowOffset + column] -= factor * matrix[pivotOffset + column];
+                    }
+
+                    rightHandSide[row] -= factor * rightHandSide[pivot];
+                }
+            }
+
+            BackSubstitute(matrix, rightHandSide, solution, size);
+            return solution;
+        }
+
+        private static unsafe double[] SolveGaussianAvx(double[] matrix, double[] rightHandSide, int size)
+        {
+            var solution = new double[size];
+            fixed (double* matrixPointer = matrix)
+            {
+                for (var pivot = 0; pivot < size; pivot++)
+                {
+                    var maxRow = FindPivotRow(matrix, size, pivot);
+                    SwapRows(matrix, rightHandSide, size, pivot, maxRow);
+
+                    var pivotRow = matrixPointer + (pivot * size);
+                    var diagonal = pivotRow[pivot];
+                    if (Math.Abs(diagonal) < 1e-15)
+                    {
+                        diagonal = 1e-15;
+                    }
+
+                    var diagonalVector = Vector256.Create(diagonal);
+                    var column = pivot;
+                    for (; column <= size - Vector256<double>.Count; column += Vector256<double>.Count)
+                    {
+                        var values = Avx.LoadVector256(pivotRow + column);
+                        Avx.Store(pivotRow + column, Avx.Divide(values, diagonalVector));
+                    }
+
+                    for (; column < size; column++)
+                    {
+                        pivotRow[column] /= diagonal;
+                    }
+
+                    rightHandSide[pivot] /= diagonal;
+                    for (var row = pivot + 1; row < size; row++)
+                    {
+                        var targetRow = matrixPointer + (row * size);
+                        var factor = targetRow[pivot];
+                        if (factor == 0d)
+                        {
+                            continue;
+                        }
+
+                        var factorVector = Vector256.Create(factor);
+                        column = pivot;
+                        for (; column <= size - Vector256<double>.Count; column += Vector256<double>.Count)
+                        {
+                            var target = Avx.LoadVector256(targetRow + column);
+                            var source = Avx.LoadVector256(pivotRow + column);
+                            Avx.Store(targetRow + column, Avx.Subtract(target, Avx.Multiply(factorVector, source)));
+                        }
+
+                        for (; column < size; column++)
+                        {
+                            targetRow[column] -= factor * pivotRow[column];
+                        }
+
+                        rightHandSide[row] -= factor * rightHandSide[pivot];
+                    }
+                }
+            }
+
+            BackSubstitute(matrix, rightHandSide, solution, size);
+            return solution;
+        }
+
+        private static int FindPivotRow(double[] matrix, int size, int pivot)
+        {
+            var maxRow = pivot;
+            var maxValue = Math.Abs(matrix[(pivot * size) + pivot]);
+            for (var row = pivot + 1; row < size; row++)
+            {
+                var value = Math.Abs(matrix[(row * size) + pivot]);
+                if (value > maxValue)
+                {
+                    maxValue = value;
+                    maxRow = row;
+                }
+            }
+
+            return maxRow;
+        }
+
+        private static void SwapRows(double[] matrix, double[] rightHandSide, int size, int firstRow, int secondRow)
+        {
+            if (firstRow == secondRow)
+            {
+                return;
+            }
+
+            var firstOffset = firstRow * size;
+            var secondOffset = secondRow * size;
+            for (var column = 0; column < size; column++)
+            {
+                (matrix[firstOffset + column], matrix[secondOffset + column]) =
+                    (matrix[secondOffset + column], matrix[firstOffset + column]);
+            }
+
+            (rightHandSide[firstRow], rightHandSide[secondRow]) =
+                (rightHandSide[secondRow], rightHandSide[firstRow]);
+        }
+
+        private static void BackSubstitute(double[] matrix, double[] rightHandSide, double[] solution, int size)
+        {
+            for (var row = size - 1; row >= 0; row--)
+            {
+                var sum = rightHandSide[row];
+                var rowOffset = row * size;
+                for (var column = row + 1; column < size; column++)
+                {
+                    sum -= matrix[rowOffset + column] * solution[column];
+                }
+
+                solution[row] = sum;
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]

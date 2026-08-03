@@ -49,6 +49,10 @@ different exposure times:
 `SampleCount` controls the number of points used to estimate the response curve.
 `SmoothFactor` regularizes that curve. `MotionFilterStrength` controls motion-mask
 sensitivity from `0` (disabled) to `100`; it is not a generic sharpening control.
+The response-curve sampler uses the median exposure as its reference, balances
+coverage across RGB code values and image regions, and excludes clipped channel
+values. After the initial solve, samples with unusually large cross-exposure
+residuals are rejected and the three channel curves are solved once more.
 
 ## Tone mappers
 
@@ -91,7 +95,9 @@ dynamic range that is absent from the source.
 The default CPU path uses `Parallel.For`. With
 `SystemHelper.UseAvxState = UseAvxState.Auto` (the default), HDRLib selects its
 AVX2 implementation when `Avx2.IsSupported`; otherwise it uses the scalar CPU
-implementation. Keep `Auto` unless you are deliberately testing a particular
+implementation. The same selection controls the AVX-accelerated contiguous
+`256 x 256` solver used to recover the three camera-response curves. Keep
+`Auto` unless you are deliberately testing a particular
 path—forcing SIMD on unsupported hardware is invalid.
 
 GPU execution is explicit: create one `GpuContext` and pass it to the aligner,

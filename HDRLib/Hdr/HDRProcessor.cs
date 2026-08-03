@@ -2,7 +2,6 @@
 
 namespace HDRLib.Hdr.Debevec
 {
-    using System.Drawing;
     using System.Runtime.CompilerServices;
     using Gpu;
     using Interfaces;
@@ -43,7 +42,10 @@ namespace HDRLib.Hdr.Debevec
         [MethodImpl(MethodImplOptions.AggressiveOptimization & MethodImplOptions.AggressiveInlining)]
         internal static float Weight(float z)
         {
-            return (float)Math.Exp(-Math.Pow((z - 128) /96, 2));
+            var distanceFromClipping = Math.Min(z, Const.zMax - z);
+            var edge = Math.Clamp(distanceFromClipping / 16f, 0f, 1f);
+            var edgeTaper = edge * edge * (3f - (2f * edge));
+            return (float)Math.Exp(-Math.Pow((z - 128) / 96, 2)) * edgeTaper;
         }
 
 
@@ -79,21 +81,21 @@ namespace HDRLib.Hdr.Debevec
             var height = images[0].Height;
             var sampleCount = options.SampleCount;
             var smoothFactor = options.SmoothFactor;
-            var standardNumber = 0;
-            var standard = images[standardNumber];
-
             var pixelsInfo = new PixelInfo[imageCount];
             Parallel.For(0, imageCount, i =>
             {
                 pixelsInfo[i] = PixelInfo.Create(images[i]);
             });
 
+            var referenceIndex = ResponseCurveSampleSelector.SelectReferenceImageIndex(pixelsInfo);
+            if (referenceIndex != 0)
+            {
+                (pixelsInfo[0], pixelsInfo[referenceIndex]) = (pixelsInfo[referenceIndex], pixelsInfo[0]);
+            }
+
+            const int standardNumber = 0;
             var motionMask = CreateMotionMask(pixelsInfo, standardNumber, options.MotionFilterStrength);
-
-            var position = new List<Point>();
-            position.AddRange(this.GetStratifiedSamplePoints(standard, motionMask, (int)(sampleCount), 0.6f));
-          //  position.AddRange(this.GetStratifiedSamplePoints(standard, null, sampleCount, 0));
-
+            var position = ResponseCurveSampleSelector.Select(pixelsInfo, motionMask, sampleCount);
 
             Parallel.For(0, imageCount, i =>
             {
@@ -102,7 +104,20 @@ namespace HDRLib.Hdr.Debevec
 
 
             var response = new double[Const.ChannelCount][];
-            Parallel.For(0, Const.ChannelCount, i => { response[i] = GSolve(pixelsInfo, smoothFactor, i, LutW); });
+            var useAvxCurveSolver = SystemHelper.UseAvx;
+            Parallel.For(0, Const.ChannelCount, i =>
+            {
+                response[i] = GSolve(pixelsInfo, smoothFactor, i, LutW, useAvxCurveSolver);
+            });
+            var inliers = BuildResponseCurveInlierMask(pixelsInfo, response, LutW);
+            if (inliers.Any(inlier => !inlier))
+            {
+                Parallel.For(0, Const.ChannelCount, i =>
+                {
+                    response[i] = GSolve(pixelsInfo, smoothFactor, i, LutW, useAvxCurveSolver, inliers);
+                });
+            }
+
             this.radianceMap.Fill(pixelsInfo, response, motionMask!, width, height);
             this.radianceMap.Normalize(options);
             return this.radianceMap.ToImage<T>();
@@ -130,13 +145,19 @@ namespace HDRLib.Hdr.Debevec
             return SystemHelper.UseAvx ? new RadianceMapSIMD(toneMapperSettings) : new RadianceMap(toneMapperSettings);
         }
 
-        private static double[] GSolve(PixelInfo[] pixelInfo, int smoothFactor, int channel, float[] lutWeight)
+        internal static double[] GSolve(
+            PixelInfo[] pixelInfo,
+            int smoothFactor,
+            int channel,
+            float[] lutWeight,
+            bool useAvx,
+            bool[]? includedSamples = null)
         {
             const int responseValueCount = Const.zMax + 1;
             var exposureCount = pixelInfo.Length;
             var sampleCount = pixelInfo[0].Rgb[0].Length;
 
-            var normal = MathHelper.Initialize2DArray<double>(responseValueCount, responseValueCount);
+            var normal = new double[responseValueCount * responseValueCount];
             var rhs = new double[responseValueCount];
             var sampleWeightsByZ = new double[responseValueCount];
             var sampleLogByZ = new double[responseValueCount];
@@ -144,6 +165,11 @@ namespace HDRLib.Hdr.Debevec
 
             for (var sample = 0; sample < sampleCount; sample++)
             {
+                if (includedSamples is not null && !includedSamples[sample])
+                {
+                    continue;
+                }
+
                 var activeCount = 0;
                 var sumWeight = 0d;
                 var sumWeightedLogTime = 0d;
@@ -178,15 +204,15 @@ namespace HDRLib.Hdr.Debevec
                     {
                         var z = activeZ[i];
                         var wz = sampleWeightsByZ[z];
-                        var row = normal[z];
+                        var rowOffset = z * responseValueCount;
 
-                        row[z] += wz;
+                        normal[rowOffset + z] += wz;
                         rhs[z] += sampleLogByZ[z] - wz * sumWeightedLogTime * inverseSumWeight;
 
                         for (var j = 0; j < activeCount; j++)
                         {
                             var zz = activeZ[j];
-                            row[zz] -= wz * sampleWeightsByZ[zz] * inverseSumWeight;
+                            normal[rowOffset + zz] -= wz * sampleWeightsByZ[zz] * inverseSumWeight;
                         }
                     }
                 }
@@ -199,159 +225,152 @@ namespace HDRLib.Hdr.Debevec
                 }
             }
 
-            normal[128][128] += 1;
+            normal[(128 * responseValueCount) + 128] += 1;
 
             for (var i = 0; i < responseValueCount - 2; ++i)
             {
                 var weight = smoothFactor * (double)lutWeight[i + 1];
-                AddSmoothingRow(normal, i, weight, -2 * weight, weight);
+                AddSmoothingRow(normal, responseValueCount, i, weight, -2 * weight, weight);
             }
 
             const double lambda = 1e-8;
             for (var i = 0; i < responseValueCount; i++)
             {
-                normal[i][i] += lambda;
+                normal[(i * responseValueCount) + i] += lambda;
             }
 
-            return LeastSquares.SolveLinearSystem(normal, rhs);
+            return LeastSquares.SolveLinearSystem(normal, rhs, responseValueCount, useAvx);
         }
 
-        private static void AddSmoothingRow(double[][] normal, int startIndex, double left, double middle, double right)
+        internal static bool[] BuildResponseCurveInlierMask(
+            PixelInfo[] pixelInfo,
+            double[][] response,
+            float[] lutWeight)
         {
-            AddSymmetric(normal, startIndex, startIndex, left * left);
-            AddSymmetric(normal, startIndex, startIndex + 1, left * middle);
-            AddSymmetric(normal, startIndex, startIndex + 2, left * right);
-            AddSymmetric(normal, startIndex + 1, startIndex + 1, middle * middle);
-            AddSymmetric(normal, startIndex + 1, startIndex + 2, middle * right);
-            AddSymmetric(normal, startIndex + 2, startIndex + 2, right * right);
+            var sampleCount = pixelInfo[0].Rgb[0].Length;
+            var exposureCount = pixelInfo.Length;
+            var residuals = new double[sampleCount];
+
+            for (var sample = 0; sample < sampleCount; sample++)
+            {
+                var weightedSquaredError = 0d;
+                var totalWeight = 0d;
+                for (var channel = 0; channel < Const.ChannelCount; channel++)
+                {
+                    var channelWeight = 0d;
+                    var weightedIrradiance = 0d;
+                    for (var exposure = 0; exposure < exposureCount; exposure++)
+                    {
+                        var z = pixelInfo[exposure].Rgb[channel][sample];
+                        var weight = lutWeight[z];
+                        var weightSquared = weight * weight;
+                        if (weightSquared <= 1e-12)
+                        {
+                            continue;
+                        }
+
+                        weightedIrradiance +=
+                            weightSquared * (response[channel][z] - pixelInfo[exposure].AvgLuminance);
+                        channelWeight += weightSquared;
+                    }
+
+                    if (channelWeight <= 1e-12)
+                    {
+                        continue;
+                    }
+
+                    var logIrradiance = weightedIrradiance / channelWeight;
+                    for (var exposure = 0; exposure < exposureCount; exposure++)
+                    {
+                        var z = pixelInfo[exposure].Rgb[channel][sample];
+                        var weight = lutWeight[z];
+                        var weightSquared = weight * weight;
+                        if (weightSquared <= 1e-12)
+                        {
+                            continue;
+                        }
+
+                        var error = response[channel][z] -
+                                    pixelInfo[exposure].AvgLuminance -
+                                    logIrradiance;
+                        weightedSquaredError += weightSquared * error * error;
+                        totalWeight += weightSquared;
+                    }
+                }
+
+                residuals[sample] = totalWeight > 1e-12
+                    ? Math.Sqrt(weightedSquaredError / totalWeight)
+                    : double.PositiveInfinity;
+            }
+
+            var finiteResiduals = residuals.Where(double.IsFinite).Order().ToArray();
+            if (finiteResiduals.Length == 0)
+            {
+                return Enumerable.Repeat(true, sampleCount).ToArray();
+            }
+
+            var median = Median(finiteResiduals);
+            var deviations = finiteResiduals
+                .Select(value => Math.Abs(value - median))
+                .Order()
+                .ToArray();
+            var medianAbsoluteDeviation = Median(deviations);
+            var threshold = Math.Max(0.02d, median + (3d * 1.4826d * medianAbsoluteDeviation));
+            var result = residuals.Select(value => double.IsFinite(value) && value <= threshold).ToArray();
+
+            var minimumInlierCount = Math.Min(sampleCount, Math.Max(64, (int)Math.Ceiling(sampleCount * 0.7d)));
+            if (result.Count(inlier => inlier) < minimumInlierCount)
+            {
+                Array.Fill(result, false);
+                foreach (var index in Enumerable.Range(0, sampleCount)
+                             .OrderBy(index => residuals[index])
+                             .Take(minimumInlierCount))
+                {
+                    result[index] = true;
+                }
+            }
+
+            return result;
         }
 
-        private static void AddSymmetric(double[][] matrix, int row, int column, double value)
+        private static double Median(double[] sorted)
         {
-            matrix[row][column] += value;
+            if (sorted.Length == 0)
+            {
+                return 0d;
+            }
+
+            var middle = sorted.Length / 2;
+            return sorted.Length % 2 == 1
+                ? sorted[middle]
+                : (sorted[middle - 1] + sorted[middle]) * 0.5d;
+        }
+
+        private static void AddSmoothingRow(
+            double[] normal,
+            int matrixSize,
+            int startIndex,
+            double left,
+            double middle,
+            double right)
+        {
+            AddSymmetric(normal, matrixSize, startIndex, startIndex, left * left);
+            AddSymmetric(normal, matrixSize, startIndex, startIndex + 1, left * middle);
+            AddSymmetric(normal, matrixSize, startIndex, startIndex + 2, left * right);
+            AddSymmetric(normal, matrixSize, startIndex + 1, startIndex + 1, middle * middle);
+            AddSymmetric(normal, matrixSize, startIndex + 1, startIndex + 2, middle * right);
+            AddSymmetric(normal, matrixSize, startIndex + 2, startIndex + 2, right * right);
+        }
+
+        private static void AddSymmetric(double[] matrix, int matrixSize, int row, int column, double value)
+        {
+            matrix[(row * matrixSize) + column] += value;
             if (row != column)
             {
-                matrix[column][row] += value;
+                matrix[(column * matrixSize) + row] += value;
             }
         }
 
-
-
-
-        private List<Point> GetSamples(IImageProxy img, int totalSamples)
-        {
-            var width = img.Width;
-            var height = img.Height;
-            var step = Math.Sqrt(totalSamples);
-            var stepY = (int)(height / step);
-            var stepX = (int)(height / step);
-
-            var result = new List<Point>();
-            for (int y = stepY; y < height; y+= stepY)
-            {
-                for (int x = stepX; x < width; x+=stepX)
-                {
-                    result.Add(new Point(x,y)); 
-                }
-            }
-
-            return result;
-        }
-
-
-        private List<Point> GetStratifiedSamplePoints(
-       IImageProxy img,
-       float[,]? motionMask,
-       int totalSamples = 3000,
-       float threshold = 0.85f,
-       int bins = 64,
-       int seed = 42)
-        {
-            var rnd = new Random(seed);
-            int width = img.Width;
-            int height = img.Height;
-
-            // Stratified bins by brightness
-            var binsList = new List<Point>[bins];
-            for (int i = 0; i < bins; i++)
-                binsList[i] = new List<Point>();
-
-            // --- Fill bins ---
-            for (int y = 0; y < height; y++)
-            {
-                var row = img.LoadRow(y);
-
-                for (int x = 0, p = 0; x < width; x++, p += 3)
-                {
-                    // ---- motion mask check ----
-                    if (motionMask != null && motionMask[y, x] <= threshold)
-                        continue;
-
-                    // ---- luminance 0..255 ----
-                    float l =
-                        0.2126f * row[p] +
-                        0.7152f * row[p + 1] +
-                        0.0722f * row[p + 2];
-
-                    // ---- bin index 0..bins-1 ----
-                    int bi = (int)(l / 255f * (bins - 1));
-
-                    binsList[bi].Add(new Point(x, y));
-                }
-            }
-
-            // --- Prepare output ---
-            var result = new List<Point>(totalSamples);
-
-            // Equal distribution over bins
-            int basePerBin = totalSamples / bins;
-            int remainder = totalSamples % bins;
-
-            var used = new HashSet<(int x, int y)>();
-
-            for (int bi = 0; bi < bins; bi++)
-            {
-                var bucket = binsList[bi];
-                int take = basePerBin + (bi < remainder ? 1 : 0);
-
-                if (bucket.Count == 0)
-                    continue;
-
-                // Shuffle bucket
-                for (int i = bucket.Count - 1; i > 0; i--)
-                {
-                    int j = rnd.Next(i + 1);
-                    (bucket[i], bucket[j]) = (bucket[j], bucket[i]);
-                }
-
-                take = Math.Min(take, bucket.Count);
-
-                for (int k = 0; k < take; k++)
-                {
-                    var p = bucket[k];
-                    if (used.Add((p.X, p.Y)))
-                        result.Add(p);
-                }
-            }
-
-            // If still not enough (rare), fill from non-empty bins
-            if (result.Count < totalSamples)
-            {
-                for (int tries = 0; tries < totalSamples * 2 && result.Count < totalSamples; tries++)
-                {
-                    int bi = rnd.Next(bins);
-                    var bucket = binsList[bi];
-                    if (bucket.Count == 0)
-                        continue;
-
-                    var p = bucket[rnd.Next(bucket.Count)];
-                    if (used.Add((p.X, p.Y)))
-                        result.Add(p);
-                }
-            }
-
-            return result;
-        }
 
 
 

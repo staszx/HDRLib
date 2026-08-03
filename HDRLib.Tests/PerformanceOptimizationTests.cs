@@ -2,6 +2,7 @@
 
 namespace HDRLib.Tests;
 
+using System.Diagnostics;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using Align;
@@ -109,6 +110,108 @@ public class PerformanceOptimizationTests
         MotionMaskSimd.ApplyMotionMask(simdImage, referenceImage, threshold: 0.5f, alphaMotion: 12f, midTonePower: 2f);
 
         Assert.That(simdImage.LoadRow(0), Is.EqualTo(scalarImage.LoadRow(0)));
+    }
+
+    [Test]
+    public void LinearSystemSolver_AvxMatchesScalar_AndReportsBenchmark()
+    {
+        RequireAvx2();
+
+        const int size = 256;
+        const int iterations = 4;
+        var matrix = CreateDiagonallyDominantMatrix(size);
+        var rightHandSide = Enumerable.Range(0, size)
+            .Select(index => Math.Sin(index * 0.17d))
+            .ToArray();
+
+        var scalar = LeastSquares.SolveLinearSystem(
+            (double[])matrix.Clone(),
+            (double[])rightHandSide.Clone(),
+            size,
+            useAvx: false);
+        var avx = LeastSquares.SolveLinearSystem(
+            (double[])matrix.Clone(),
+            (double[])rightHandSide.Clone(),
+            size,
+            useAvx: true);
+
+        for (var i = 0; i < size; i++)
+        {
+            Assert.That(avx[i], Is.EqualTo(scalar[i]).Within(1e-12d), $"index={i}");
+        }
+
+        var legacyElapsed = MeasureLegacySolver(matrix, rightHandSide, size, iterations);
+        var scalarElapsed = MeasureContiguousSolver(matrix, rightHandSide, size, iterations, useAvx: false);
+        var avxElapsed = MeasureContiguousSolver(matrix, rightHandSide, size, iterations, useAvx: true);
+        TestContext.Out.WriteLine(
+            $"Gaussian 256x256 x{iterations}: legacy={legacyElapsed.TotalMilliseconds:F1} ms, " +
+            $"contiguous={scalarElapsed.TotalMilliseconds:F1} ms, AVX={avxElapsed.TotalMilliseconds:F1} ms, " +
+            $"legacy/AVX={legacyElapsed.TotalMilliseconds / avxElapsed.TotalMilliseconds:F2}x");
+    }
+
+    private static double[] CreateDiagonallyDominantMatrix(int size)
+    {
+        var matrix = new double[size * size];
+        for (var row = 0; row < size; row++)
+        {
+            for (var column = 0; column < size; column++)
+            {
+                matrix[(row * size) + column] = row == column
+                    ? size + 4d
+                    : ((((row + column) % 17) - 8) * 0.002d);
+            }
+        }
+
+        return matrix;
+    }
+
+    private static TimeSpan MeasureLegacySolver(double[] matrix, double[] rightHandSide, int size, int iterations)
+    {
+        var matrices = new double[iterations][][];
+        var rightHandSides = new double[iterations][];
+        for (var iteration = 0; iteration < iterations; iteration++)
+        {
+            matrices[iteration] = new double[size][];
+            for (var row = 0; row < size; row++)
+            {
+                matrices[iteration][row] = new double[size];
+                Array.Copy(matrix, row * size, matrices[iteration][row], 0, size);
+            }
+
+            rightHandSides[iteration] = (double[])rightHandSide.Clone();
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        for (var iteration = 0; iteration < iterations; iteration++)
+        {
+            GC.KeepAlive(LeastSquares.SolveLinearSystem(matrices[iteration], rightHandSides[iteration]));
+        }
+
+        stopwatch.Stop();
+        return stopwatch.Elapsed;
+    }
+
+    private static TimeSpan MeasureContiguousSolver(
+        double[] matrix,
+        double[] rightHandSide,
+        int size,
+        int iterations,
+        bool useAvx)
+    {
+        var matrices = Enumerable.Range(0, iterations).Select(_ => (double[])matrix.Clone()).ToArray();
+        var rightHandSides = Enumerable.Range(0, iterations).Select(_ => (double[])rightHandSide.Clone()).ToArray();
+        var stopwatch = Stopwatch.StartNew();
+        for (var iteration = 0; iteration < iterations; iteration++)
+        {
+            GC.KeepAlive(LeastSquares.SolveLinearSystem(
+                matrices[iteration],
+                rightHandSides[iteration],
+                size,
+                useAvx));
+        }
+
+        stopwatch.Stop();
+        return stopwatch.Elapsed;
     }
 
     private static void RequireAvx2()

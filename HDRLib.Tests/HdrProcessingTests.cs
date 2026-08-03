@@ -155,6 +155,27 @@ public class HdrProcessingTests
     }
 
     [Test]
+    public void ProcessHdrSeries_ResponseCurveIsIndependentOfBracketOrder()
+    {
+        using var forward = ProcessHdrSeries(
+            GetSamplesPath(),
+            ["DSC_5299.JPG", "DSC_5300.JPG", "DSC_5301.JPG"],
+            align: false,
+            ProcessingMode.CPU,
+            new NaturalToneMapperSettings(),
+            imageScale: 0.1f);
+        using var reversed = ProcessHdrSeries(
+            GetSamplesPath(),
+            ["DSC_5301.JPG", "DSC_5300.JPG", "DSC_5299.JPG"],
+            align: false,
+            ProcessingMode.CPU,
+            new NaturalToneMapperSettings(),
+            imageScale: 0.1f);
+
+        Assert.That(HashImageBytes(reversed), Is.EqualTo(HashImageBytes(forward)));
+    }
+
+    [Test]
     public void ProcessHdrSeries_ContrastBalancerControlsChangeHdrOutput()
     {
         var neutral = new ContrastBalancerToneMapperSettings().MakeNeutral();
