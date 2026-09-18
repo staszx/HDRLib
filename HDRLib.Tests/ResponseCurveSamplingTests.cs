@@ -3,6 +3,7 @@
 namespace HDRLib.Tests;
 
 using System.Drawing;
+using Hdr;
 using Hdr.Debevec;
 using Interfaces;
 using NUnit.Framework;
@@ -147,6 +148,66 @@ public class ResponseCurveSamplingTests
         }
     }
 
+    [Test]
+    public void CreateMotionMask_GammaEncodedStaticBracket_PreservesStaticPixels()
+    {
+        const int width = 64;
+        const int height = 32;
+        const double gamma = 2.2d;
+        using var reference = CreateGammaEncodedImage(width, height, 1d, gamma);
+        using var dark = CreateGammaEncodedImage(width, height, 0.5d, gamma);
+        using var light = CreateGammaEncodedImage(width, height, 2d, gamma);
+        var images = new[]
+        {
+            PixelInfo.Create(reference),
+            PixelInfo.Create(dark),
+            PixelInfo.Create(light)
+        };
+        var response = CreateGammaResponse(gamma);
+
+        var motionMask = HDRProcessor<SyntheticImageProxy>.CreateMotionMask(images, response, 0, 50)!;
+
+        var staticPixelRatio = motionMask.Cast<float>().Count(weight => weight > 0.6f) /
+                               (double)(width * height);
+        Assert.That(staticPixelRatio, Is.GreaterThan(0.98d));
+    }
+
+    [Test]
+    public void CreateMotionMask_RadianceChange_RejectsChangedPixel()
+    {
+        const int width = 64;
+        const int height = 32;
+        const int changedX = width / 2;
+        const int changedY = height / 2;
+        const double gamma = 2.2d;
+        using var reference = CreateGammaEncodedImage(width, height, 1d, gamma);
+        using var dark = CreateGammaEncodedImage(width, height, 0.5d, gamma);
+        using var light = CreateGammaEncodedImage(
+            width,
+            height,
+            2d,
+            gamma,
+            changedX,
+            changedY,
+            changedRadianceScale: 0.25d);
+        var images = new[]
+        {
+            PixelInfo.Create(reference),
+            PixelInfo.Create(dark),
+            PixelInfo.Create(light)
+        };
+        var response = CreateGammaResponse(gamma);
+
+        var motionMask = HDRProcessor<SyntheticImageProxy>.CreateMotionMask(images, response, 0, 50)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(motionMask[changedY, changedX], Is.LessThanOrEqualTo(0.6f));
+            Assert.That(motionMask[changedY, changedX - 1], Is.GreaterThan(0.6f));
+            Assert.That(motionMask[changedY, changedX + 1], Is.GreaterThan(0.6f));
+        });
+    }
+
     private static SyntheticImageProxy CreateGradient(int width, int height, float scale, double exposureTime)
     {
         var image = new SyntheticImageProxy(width, height, exposureTime);
@@ -162,6 +223,47 @@ public class ResponseCurveSamplingTests
         }
 
         return image;
+    }
+
+    private static SyntheticImageProxy CreateGammaEncodedImage(
+        int width,
+        int height,
+        double exposureTime,
+        double gamma,
+        int changedX = -1,
+        int changedY = -1,
+        double changedRadianceScale = 1d)
+    {
+        var image = new SyntheticImageProxy(width, height, exposureTime);
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var radiance = 0.2d + x / (double)(width - 1);
+                var scale = x == changedX && y == changedY ? changedRadianceScale : 1d;
+                var red = EncodeGamma(radiance * (0.8d + 0.2d * y / (height - 1)) * scale, exposureTime, gamma);
+                var green = EncodeGamma(radiance * scale, exposureTime, gamma);
+                var blue = EncodeGamma(radiance * (1.1d - 0.2d * y / (height - 1)) * scale, exposureTime, gamma);
+                image.SetPixel(x, y, [red, green, blue]);
+            }
+        }
+
+        return image;
+    }
+
+    private static byte EncodeGamma(double radiance, double exposureTime, double gamma)
+    {
+        var value = 128d * Math.Pow(radiance * exposureTime, 1d / gamma);
+        return (byte)Math.Clamp(Math.Round(value), 0d, 255d);
+    }
+
+    private static double[][] CreateGammaResponse(double gamma)
+    {
+        return Enumerable.Range(0, 3)
+            .Select(_ => Enumerable.Range(0, 256)
+                .Select(value => gamma * Math.Log(Math.Max(value, 1) / 128d))
+                .ToArray())
+            .ToArray();
     }
 
     private static byte Scale(float value, float scale) => (byte)Math.Clamp(MathF.Round(value * scale), 0f, 255f);

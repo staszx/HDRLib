@@ -92,7 +92,9 @@ protected ToneMapper(ToneMapperSettings settings)
                 originalPixels = CreateBlendSource(image.Pixels, this.Settings.Transparent);
             }
 
-            var auto = this.Settings.AutoAdjustEnabled ? ImageAnalyzer.Analyze(image.Pixels) : null;
+            var auto = this.Settings.IsAutoAdjustActive
+                ? ImageAnalyzer.Analyze(image.Pixels).WithStrength(this.Settings.AutoAdjustStrength)
+                : null;
             this.LastAutoAdjustSettings = auto;
             ToneBoostProcessor.ApplyInPlace(image.Pixels, this.Settings.ShadowsBoost, this.Settings.MidtonesBoost, this.Settings.HighlightsBoost);
             DehazeProcessor.ApplyInPlace(image, CombineDetailAmount(this.Settings.Dehaze, auto?.Dehaze));

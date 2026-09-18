@@ -94,8 +94,7 @@ namespace HDRLib.Hdr.Debevec
             }
 
             const int standardNumber = 0;
-            var motionMask = CreateMotionMask(pixelsInfo, standardNumber, options.MotionFilterStrength);
-            var position = ResponseCurveSampleSelector.Select(pixelsInfo, motionMask, sampleCount);
+            var position = ResponseCurveSampleSelector.Select(pixelsInfo, null, sampleCount);
 
             Parallel.For(0, imageCount, i =>
             {
@@ -118,21 +117,38 @@ namespace HDRLib.Hdr.Debevec
                 });
             }
 
+            var motionMask = CreateMotionMask(
+                pixelsInfo,
+                response,
+                standardNumber,
+                options.MotionFilterStrength);
             this.radianceMap.Fill(pixelsInfo, response, motionMask!, width, height);
             this.radianceMap.Normalize(options);
             return this.radianceMap.ToImage<T>();
         }
 
-        internal static float[,]? CreateMotionMask(PixelInfo[] pixelsInfo, int standardNumber, int motionFilterStrength)
+        internal static float[,]? CreateMotionMask(
+            PixelInfo[] pixelsInfo,
+            double[][] response,
+            int standardNumber,
+            int motionFilterStrength)
         {
             if (motionFilterStrength <= 0)
             {
                 return null;
             }
 
-            const float alphaMotionPerStrengthUnit = 12f / 100f;
+            // At the default strength, a 0.6 mask threshold tolerates about
+            // one third of a stop of log-radiance mismatch after alignment.
+            const float alphaMotionPerStrengthUnit = 1.5f / 100f;
             var strength = Math.Clamp(motionFilterStrength, 1, 100);
-            return MotionMask.BuildMotionMask(pixelsInfo, standardNumber, strength * alphaMotionPerStrengthUnit, 3f);
+            return MotionMask.BuildMotionMask(
+                pixelsInfo,
+                response,
+                LutW,
+                standardNumber,
+                strength * alphaMotionPerStrengthUnit,
+                3f);
         }
 
         private IRadianceMap CreateRadianceMap(ToneMapperSettings? toneMapperSettings)

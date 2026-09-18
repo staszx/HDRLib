@@ -26,7 +26,7 @@ public class HdrProcessingTests
     [TestCase(-1)]
     public void CreateMotionMask_NonPositiveStrength_DisablesMotionFiltering(int strength)
     {
-        var motionMask = HDRProcessor<ImageSharpProxy>.CreateMotionMask([], 0, strength);
+        var motionMask = HDRProcessor<ImageSharpProxy>.CreateMotionMask([], [], 0, strength);
 
         Assert.That(motionMask, Is.Null);
     }
@@ -37,14 +37,16 @@ public class HdrProcessingTests
     //[TestCase("DSC_6358.jpg", "DSC_6359.jpg", "DSC_6360.jpg", true)]
     //[TestCase("DSC_6467.jpg", "DSC_6468.jpg", "DSC_6469.jpg", true)]
     //[TestCase("DSC_6461.jpg", "DSC_6462.jpg", "DSC_6463.jpg", true)]
-    [TestCase("DSC_6912.jpg", "DSC_6913.jpg", "DSC_6914.jpg", true)]
-    [TestCase("Waterfall.jpg", "Waterfall_over.jpg", "Waterfall_under.jpg", false)]
+    [TestCase("DSC_9547.JPG", "DSC_9548.JPG", "DSC_9549.JPG", true)]
+    //[TestCase("DSC_9529.JPG", "DSC_9530.JPG", "DSC_9531.JPG", true)]
+    //[TestCase("DSC_9544.JPG", "DSC_9545.JPG", "DSC_9546.JPG", true)]
+    //[TestCase("Waterfall.jpg", "Waterfall_over.jpg", "Waterfall_under.jpg", false)]
 
     public void Test1(string imageName1, string imageName2, string imageName3, bool align)
     {
-        SystemHelper.UseAvxState = UseAvxState.Disable;
+        //SystemHelper.UseAvxState = UseAvxState;
    
-        var path = "D:\\Documents\\Тест\\Hdr";
+        var path = "D:\\Фото\\Доминикана";
 
 
 
@@ -77,17 +79,17 @@ public class HdrProcessingTests
 
             var processor = new HDRProcessor<ImageSharpProxy>(gpu);
 
-        var toneMapperSettings = new NaturalToneMapperSettings(){ Brightness = 1.2f, Gamma = 1.5f};
-        var sourceBrightness = list.Select(MeasureBrightness).ToArray();
-        var darkest = sourceBrightness.MinBy(x => x.Mean);
-        var brightest = sourceBrightness.MaxBy(x => x.Mean);
+        var toneMapperSettings = new NaturalToneMapperSettings(){ /*Brightness = 1.2f, Gamma = 1.5f*/};
+        //var sourceBrightness = list.Select(MeasureBrightness).ToArray();
+        //var darkest = sourceBrightness.MinBy(x => x.Mean);
+        //var brightest = sourceBrightness.MaxBy(x => x.Mean);
 
         var image = processor.Process(list, new HdrImageOptions
         {
             SampleCount = 1000,
             SmoothFactor = 300,
             MotionFilterStrength = 50, 
-            ToneMapperSettings = toneMapperSettings
+            ToneMapperSettings = null
         });
 
         //var resultBrightness = MeasureBrightness(image);

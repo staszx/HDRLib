@@ -147,6 +147,42 @@ public class ImageAnalyzerTests
     }
 
     [Test]
+    public void WithStrength_ScalesEveryAdjustmentFromItsNeutralValue()
+    {
+        var auto = new ImageAdjustSettings
+        {
+            ExposureEV = 2f,
+            Contrast = 1.4f,
+            Brightness = 1.2f,
+            Shadows = 1.6f,
+            Midtones = 0.8f,
+            Saturation = 1.3f,
+            Dehaze = 20f,
+            Clarity = 12f,
+            LocalContrast = 8f,
+            HighlightCompression = 1.5f,
+            DynamicRangeStops = 10f
+        };
+
+        var scaled = auto.WithStrength(25f);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(scaled.ExposureEV, Is.EqualTo(0.5f).Within(1e-6f));
+            Assert.That(scaled.Contrast, Is.EqualTo(1.1f).Within(1e-6f));
+            Assert.That(scaled.Brightness, Is.EqualTo(1.05f).Within(1e-6f));
+            Assert.That(scaled.Shadows, Is.EqualTo(1.15f).Within(1e-6f));
+            Assert.That(scaled.Midtones, Is.EqualTo(0.95f).Within(1e-6f));
+            Assert.That(scaled.Saturation, Is.EqualTo(1.075f).Within(1e-6f));
+            Assert.That(scaled.Dehaze, Is.EqualTo(5f).Within(1e-6f));
+            Assert.That(scaled.Clarity, Is.EqualTo(3f).Within(1e-6f));
+            Assert.That(scaled.LocalContrast, Is.EqualTo(2f).Within(1e-6f));
+            Assert.That(scaled.HighlightCompression, Is.EqualTo(1.125f).Within(1e-6f));
+            Assert.That(scaled.DynamicRangeStops, Is.EqualTo(auto.DynamicRangeStops));
+        });
+    }
+
+    [Test]
     public void Analyze_AutoPostProcess_DoesNotExcessivelyDarkenBalancedLdrImage()
     {
         var image = CreateBalancedLdrPixels();
@@ -200,6 +236,28 @@ public class ImageAnalyzerTests
         {
             Assert.That(settings.AutoAdjustEnabled, Is.False);
             Assert.That(settings.ToXml(), Does.Contain($"<{nameof(ToneMapperSettings.AutoAdjustEnabled)}>false</{nameof(ToneMapperSettings.AutoAdjustEnabled)}>"));
+        });
+    }
+
+    [TestCase(-1f, 0f)]
+    [TestCase(0f, 0f)]
+    [TestCase(50f, 50f)]
+    [TestCase(100f, 100f)]
+    [TestCase(101f, 100f)]
+    public void AutoAdjustStrength_ClampsAndSerializes(float value, float expected)
+    {
+        var settings = new AcesFilmicTonemapperSettings
+        {
+            AutoAdjustStrength = value
+        };
+
+        var loaded = (AcesFilmicTonemapperSettings)ToneMapperSettings.LoadFromXml(settings.ToXml());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(settings.AutoAdjustStrength, Is.EqualTo(expected));
+            Assert.That(loaded.AutoAdjustStrength, Is.EqualTo(expected));
+            Assert.That(settings.ToXml(), Does.Contain($"<{nameof(ToneMapperSettings.AutoAdjustStrength)}>{expected}</{nameof(ToneMapperSettings.AutoAdjustStrength)}>"));
         });
     }
 

@@ -64,7 +64,9 @@ internal abstract class ToneMapperSIMD
                 this.ApplyCoreInPlace(pixels, width, height);
             }
 
-            var auto = this.Settings.AutoAdjustEnabled ? ImageAnalyzerSIMD.Analyze(pixels) : null;
+            var auto = this.Settings.IsAutoAdjustActive
+                ? ImageAnalyzerSIMD.Analyze(pixels).WithStrength(this.Settings.AutoAdjustStrength)
+                : null;
             this.LastAutoAdjustSettings = auto;
             if (!this.AppliesToneBoostInternally)
             {

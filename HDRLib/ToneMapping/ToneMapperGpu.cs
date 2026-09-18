@@ -143,7 +143,9 @@ protected ToneMapperSettings Settings { get; }
                 this.copyKernel((int)gpuPixels.Length, gpuPixels, original);
             }
 
-            var auto = this.Settings.AutoAdjustEnabled ? this.imageAnalyzer.Analyze(gpuPixels) : null;
+            var auto = this.Settings.IsAutoAdjustActive
+                ? this.imageAnalyzer.Analyze(gpuPixels).WithStrength(this.Settings.AutoAdjustStrength)
+                : null;
             this.LastAutoAdjustSettings = auto;
             this.ApplyToneBoost(gpuPixels);
             this.dehazeProcessor.ApplyInPlace(gpuPixels, CombineDetailAmount(this.Settings.Dehaze, auto?.Dehaze));

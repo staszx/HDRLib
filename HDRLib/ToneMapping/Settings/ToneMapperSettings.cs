@@ -12,6 +12,8 @@ using System.Xml.Serialization;
 /// </summary>
 public abstract class ToneMapperSettings
 {
+    private float autoAdjustStrength = 100f;
+
     private static readonly Type[] KnownTypes =
     [
         typeof(AcesFilmicTonemapperSettings),
@@ -26,6 +28,17 @@ public abstract class ToneMapperSettings
 /// Gets or sets whether automatic adjustment is enabled.
 /// </summary>
 public bool AutoAdjustEnabled { get; set; }
+    /// <summary>
+/// Gets or sets the automatic adjustment strength in the range [0, 100].
+/// </summary>
+public float AutoAdjustStrength
+    {
+        get => this.autoAdjustStrength;
+        set => this.autoAdjustStrength = float.IsNaN(value) ? 0f : Math.Clamp(value, 0f, 100f);
+    }
+
+    internal bool IsAutoAdjustActive => this.AutoAdjustEnabled && this.AutoAdjustStrength > 0f;
+
     /// <summary>
 /// Gets or sets the exposure value (EV).
 /// </summary>

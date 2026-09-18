@@ -8,7 +8,7 @@ public static class ToneMapperSettingsNeutrality
 
     public static bool IsNeutral(this ToneMapperSettings settings)
     {
-        if (settings.AutoAdjustEnabled ||
+        if (settings.IsAutoAdjustActive ||
             MathF.Abs(settings.ExposureEV) > Epsilon ||
             MathF.Abs(settings.Brightness - 1f) > Epsilon ||
             MathF.Abs(settings.Contrast - 1f) > Epsilon ||
@@ -54,6 +54,7 @@ public static class ToneMapperSettingsNeutrality
         where T : ToneMapperSettings
     {
         settings.AutoAdjustEnabled = false;
+        settings.AutoAdjustStrength = 100f;
         settings.ExposureEV = 0f;
         settings.Brightness = 1f;
         settings.Contrast = 1f;

@@ -141,7 +141,11 @@ public class ToneMapperXmlSerializationTests
 
         var settings = ToneMapperSettings.Load(presetPath);
 
-        Assert.That(settings, Is.TypeOf<NaturalToneMapperSettings>());
+        Assert.Multiple(() =>
+        {
+            Assert.That(settings, Is.TypeOf<NaturalToneMapperSettings>());
+            Assert.That(settings.AutoAdjustStrength, Is.EqualTo(100f));
+        });
     }
 
     [Test]

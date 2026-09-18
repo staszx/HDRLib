@@ -21,6 +21,7 @@ public class ToneMapperHdrBackendTests
         yield return new TestCaseData(new NaturalToneMapperSettings
         {
             AutoAdjustEnabled = true,
+            AutoAdjustStrength = 35f,
             TargetGray = 0.26f,
             WhitePointPercentile = 0.98f,
             OutputMidGray = 0.28f,

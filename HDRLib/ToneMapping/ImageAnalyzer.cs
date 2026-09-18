@@ -39,12 +39,36 @@ public sealed class ImageAdjustSettings
         };
     }
 
+    internal ImageAdjustSettings WithStrength(float strength)
+    {
+        var factor = Math.Clamp(strength, 0f, 100f) / 100f;
+        return new ImageAdjustSettings
+        {
+            ExposureEV = this.ExposureEV * factor,
+            Contrast = ScaleMultiplier(this.Contrast, factor),
+            Brightness = ScaleMultiplier(this.Brightness, factor),
+            Shadows = ScaleMultiplier(this.Shadows, factor),
+            Midtones = ScaleMultiplier(this.Midtones, factor),
+            Saturation = ScaleMultiplier(this.Saturation, factor),
+            Dehaze = this.Dehaze * factor,
+            Clarity = this.Clarity * factor,
+            LocalContrast = this.LocalContrast * factor,
+            HighlightCompression = ScaleMultiplier(this.HighlightCompression, factor),
+            DynamicRangeStops = this.DynamicRangeStops
+        };
+    }
+
     public override string ToString()
     {
         return $"EV={this.ExposureEV:F3}, Contrast={this.Contrast:F3}, Brightness={this.Brightness:F3}, " +
                $"Shadows={this.Shadows:F3}, Midtones={this.Midtones:F3}, Saturation={this.Saturation:F3}, " +
                $"Dehaze={this.Dehaze:F1}, Clarity={this.Clarity:F1}, LocalContrast={this.LocalContrast:F1}, " +
                $"HighlightCompression={this.HighlightCompression:F3}, DR={this.DynamicRangeStops:F3}";
+    }
+
+    private static float ScaleMultiplier(float value, float factor)
+    {
+        return 1f + ((value - 1f) * factor);
     }
 
     #endregion

@@ -19,7 +19,7 @@ internal sealed class ContrastBalancerToneMapper : ToneMapper
     protected override unsafe void ApplyInPlace(Image<Rgb> image, EffectiveToneMapperSettings effectiveSettings)
     {
         var saturationRanges = this.settings.GetSaturationColorRanges();
-        if (Avx2.IsSupported && !this.settings.AutoAdjustEnabled && saturationRanges.Length == 0 && !this.ForceToneMappingCore)
+        if (Avx2.IsSupported && !this.settings.IsAutoAdjustActive && saturationRanges.Length == 0 && !this.ForceToneMappingCore)
         {
             var simd = new ContrastBalancerToneMapperSIMD(this.settings);
             this.ApplyUsingSimd(image, simd.ApplyCoreOnlyInPlace);

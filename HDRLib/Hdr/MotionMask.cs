@@ -13,14 +13,18 @@ using static System.Net.Mime.MediaTypeNames;
 
 internal static class MotionMask
 {
+    private const float MinimumReliableColorWeight = 0.05f;
+
     #region Methods
 
 
     public static unsafe float[,] BuildMotionMask(
-     PixelInfo[] pixelInfo,
-     int standardNumber,
-     float alphaMotion = 6f,
-     float gamma = 2f)
+        PixelInfo[] pixelInfo,
+        double[][] response,
+        float[] lutWeight,
+        int standardNumber,
+        float alphaMotion = 1f,
+        float gamma = 2f)
     {
         var reference = pixelInfo[standardNumber];
         int w = reference.Image.Width;
@@ -31,8 +35,11 @@ internal static class MotionMask
 
         Parallel.For(0, h, y =>
         {
-            bool firstPass = true;
             var refRow = reference.LoadRow(y);
+            for (var x = 0; x < w; x++)
+            {
+                result[y, x] = 1f;
+            }
 
             for (int i = 0; i < pixelInfo.Length; i++)
             {
@@ -41,28 +48,47 @@ internal static class MotionMask
 
                 var row = pixelInfo[i].LoadRow(y);
 
-                float exposureFactor = MathF.Exp((float)lnT[i] - (float)lnT[standardNumber]);
-
                 fixed (byte* pCur = row, pRef = refRow)
                 {
                     for (int x = 0, wx = 0; x < row.Length; x += 3, wx++)
                     {
-                        float l1 = LightFloat(pCur[x], pCur[x + 1], pCur[x + 2]);
-                        float l2 = LightFloat(pRef[x], pRef[x + 1], pRef[x + 2]);
-                        float l1norm = l1 / exposureFactor;
-                        float l2norm = l2;
-                        float diff = MathF.Abs(l1norm - l2norm);
-                        float w = MathF.Exp(-diff * alphaMotion);
-                        w = MathF.Pow(w, gamma);
+                        var currentWeight = ColorWeight(
+                            pCur[x],
+                            pCur[x + 1],
+                            pCur[x + 2],
+                            lutWeight);
+                        var referenceWeight = ColorWeight(
+                            pRef[x],
+                            pRef[x + 1],
+                            pRef[x + 2],
+                            lutWeight);
+                        if (currentWeight <= MinimumReliableColorWeight ||
+                            referenceWeight <= MinimumReliableColorWeight)
+                        {
+                            continue;
+                        }
 
-                        if (firstPass)
-                            result[y, wx] = w;
-                        else
-                            result[y, wx] *= w;
+                        var currentLogLuminance = LogLuminance(
+                            pCur[x],
+                            pCur[x + 1],
+                            pCur[x + 2],
+                            response,
+                            lnT[i]);
+                        var referenceLogLuminance = LogLuminance(
+                            pRef[x],
+                            pRef[x + 1],
+                            pRef[x + 2],
+                            response,
+                            lnT[standardNumber]);
+                        var difference = Math.Abs(currentLogLuminance - referenceLogLuminance);
+                        var motionWeight = MathF.Pow(
+                            MathF.Exp(-(float)difference * alphaMotion),
+                            gamma);
+                        // Keep the least reliable comparison without making the
+                        // mask stricter merely because the bracket has more frames.
+                        result[y, wx] = MathF.Min(result[y, wx], motionWeight);
                     }
                 }
-
-                firstPass = false;
             }
         });
 
@@ -72,16 +98,30 @@ internal static class MotionMask
 
     // ---------------- utils ----------------------------------------------------
 
-    private static float LightFloat(byte r, byte g, byte b)
-        => (0.2126f * r + 0.7152f * g + 0.0722f * b) / 255f;
-
-
-    // ���-���������� ������� �� GSolve
-    // g(z) ? log(z) �� ���������� ������ ������ �������
-    private static float LogRadiancePreGSolve(float L, float lnT)
+    private static float ColorWeight(byte red, byte green, byte blue, float[] lutWeight)
     {
-        const float eps = 1e-6f;
-        return MathF.Log(L + eps) - lnT;
+        return MathF.Min(
+            lutWeight[red],
+            MathF.Min(lutWeight[green], lutWeight[blue]));
+    }
+
+    private static double LogLuminance(
+        byte red,
+        byte green,
+        byte blue,
+        double[][] response,
+        double logExposure)
+    {
+        // g(z) - ln(t) is log irradiance. Combine the recovered channels with
+        // log-sum-exp so the comparison is exposure invariant and overflow safe.
+        var logRed = response[0][red] - logExposure;
+        var logGreen = response[1][green] - logExposure;
+        var logBlue = response[2][blue] - logExposure;
+        var maximum = Math.Max(logRed, Math.Max(logGreen, logBlue));
+        return maximum + Math.Log(
+            (0.2126d * Math.Exp(logRed - maximum)) +
+            (0.7152d * Math.Exp(logGreen - maximum)) +
+            (0.0722d * Math.Exp(logBlue - maximum)));
     }
 
     public static unsafe void ApplyMotionMask(IImageProxy img, IImageProxy reference, float threshold =0.5f, float alphaMotion = 12f, float midTonePower = 2f)

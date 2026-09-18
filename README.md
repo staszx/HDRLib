@@ -35,10 +35,11 @@ different exposure times:
    exposure metadata. Accurate exposure times are important for radiance recovery.
 2. **Align the bracket.** A coarse-to-fine image pyramid estimates the movement
    between frames and brings them into a common coordinate system.
-3. **Detect movement.** A motion mask identifies regions that do not agree across
-   the bracket so moving subjects contribute less to the merge.
-4. **Recover the camera response.** Stratified samples across the luminance range
+3. **Recover the camera response.** Stratified samples across the luminance range
    are used to solve a smooth Debevec response curve for each RGB channel.
+4. **Detect movement.** The response curves convert gamma-encoded pixels to
+   exposure-normalized radiance before the bracket is compared. The resulting
+   motion mask prevents moving subjects from contributing to the merge.
 5. **Build the radiance map.** Well-exposed samples receive more weight than
    clipped shadows or highlights. The weighted values are combined into a
    floating-point scene-radiance image.
@@ -49,6 +50,8 @@ different exposure times:
 `SampleCount` controls the number of points used to estimate the response curve.
 `SmoothFactor` regularizes that curve. `MotionFilterStrength` controls motion-mask
 sensitivity from `0` (disabled) to `100`; it is not a generic sharpening control.
+Motion detection runs after response recovery so JPEG gamma does not look like
+scene movement when the exposure changes.
 The response-curve sampler uses the median exposure as its reference, balances
 coverage across RGB code values and image regions, and excludes clipped channel
 values. After the initial solve, samples with unusually large cross-exposure
