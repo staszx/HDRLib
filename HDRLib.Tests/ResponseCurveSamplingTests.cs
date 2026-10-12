@@ -10,6 +10,183 @@ using NUnit.Framework;
 
 public class ResponseCurveSamplingTests
 {
+    [TestCase("CPU")]
+    [TestCase("SIMD")]
+    [TestCase("GPU")]
+    public void RadianceMap_WithToneMapper_EncodesNormalizedOutputOnce(string backend)
+    {
+        using var source = SyntheticImageProxy.CreateConstant(8, 2, 64, 0.5d);
+        var settings = new ToneMapping.Settings.BrightnessBalancerToneMapperSettings { WhiteClip = 0.5f };
+        using var gpu = backend == "GPU" ? new Gpu.GpuContext() : null;
+        IRadianceMap map = backend switch
+        {
+            "GPU" => new RadianceMapGpu(gpu!, settings),
+            "SIMD" => new RadianceMapSIMD(settings),
+            _ => new RadianceMap(settings)
+        };
+        map.Fill([PixelInfo.Create(source)], CreateGammaResponse(2d), null!, 8, 2);
+        map.Normalize(new HdrImageOptions { ToneMapperSettings = settings });
+        using var output = map.ToImage<PixelProvider.ImageSharp.ImageSharpProxy>();
+
+        // Constant gray fixes the HDR exposure normalization at 64/255.
+        // Brightness Balancer applies L/(1+L)/WhiteClip, then the known
+        // camera response encodes the linear result with sqrt exactly once.
+        var luminance = 64d / 255d;
+        var mapped = luminance / (1d + luminance) / 0.5d;
+        var expected = Math.Round(Math.Sqrt(mapped) * 255d);
+        for (var y = 0; y < 2; y++)
+        {
+            Assert.That(output.LoadRow(y), Has.All.EqualTo((byte)expected));
+        }
+    }
+
+    [TestCase(1d, "CPU")]
+    [TestCase(1.8d, "CPU")]
+    [TestCase(2.4d, "CPU")]
+    [TestCase(2.4d, "SIMD")]
+    [TestCase(2.4d, "GPU")]
+    public void RadianceMap_WithoutToneMapper_RoundTripsCameraResponse(double gamma, string backend)
+    {
+        const int width = 128;
+        const int height = 16;
+        using var reference = CreateGammaEncodedImage(width, height, 0.5d, gamma);
+        using var dark = CreateGammaEncodedImage(width, height, 0.125d, gamma);
+        using var light = CreateGammaEncodedImage(width, height, 2d, gamma);
+        var info = new[] { reference, dark, light }.Select(PixelInfo.Create).ToArray();
+        using var gpu = backend == "GPU" ? new Gpu.GpuContext() : null;
+        IRadianceMap map = backend switch
+        {
+            "GPU" => new RadianceMapGpu(gpu!),
+            "SIMD" => new RadianceMapSIMD(),
+            _ => new RadianceMap()
+        };
+        map.Fill(info, CreateGammaResponse(gamma), null!, width, height);
+        map.Normalize(new HdrImageOptions());
+        using var output = map.ToImage<PixelProvider.ImageSharp.ImageSharpProxy>();
+        var differences = new List<int>();
+        for (var y = 0; y < height; y++)
+        {
+            var expected = reference.LoadRow(y);
+            var actual = output.LoadRow(y);
+            differences.AddRange(expected.Zip(actual, (a, b) => Math.Abs(a - b)));
+        }
+
+        TestContext.Out.WriteLine($"{backend}, gamma={gamma}: mean={differences.Average():F3}, max={differences.Max()}");
+        Assert.That(differences.Max(), Is.LessThanOrEqualTo(1),
+            "Merging a static bracket must retain the camera encoding at the reference exposure.");
+    }
+
+    [TestCase(-8d)]
+    [TestCase(0d)]
+    [TestCase(5d)]
+    public void CameraResponseEncoder_PreservesCodesAcrossExposureAndChannelScale(double logExposure)
+    {
+        var response = CreateGammaResponse(2.4d);
+        for (var channel = 0; channel < 3; channel++)
+        {
+            for (var z = 0; z < 256; z++) response[channel][z] += channel - 1.5d;
+        }
+
+        var encoder = new CameraResponseEncoder(response, logExposure);
+        for (var channel = 0; channel < 3; channel++)
+        {
+            for (var z = 2; z < 255; z++)
+            {
+                var radiance = (float)Math.Exp(response[channel][z] - logExposure);
+                Assert.That(encoder.Encode(radiance, channel), Is.EqualTo(z).Within(0.001f));
+            }
+
+            Assert.That(encoder.Encode(0, channel), Is.Zero);
+            Assert.That(encoder.Encode(float.PositiveInfinity, channel), Is.EqualTo(255));
+        }
+    }
+
+    [Test]
+    public void CameraResponseEncoder_NonmonotonicTail_ProducesFiniteMonotonicCodes()
+    {
+        var response = CreateGammaResponse(2.4d);
+        response[0][254] = response[0][252];
+        var encoder = new CameraResponseEncoder(response, 0);
+        var previous = 0f;
+        for (var i = 0; i <= 1000; i++)
+        {
+            var value = encoder.Encode(i / 100f, 0);
+            Assert.That(float.IsFinite(value), Is.True);
+            Assert.That(value, Is.InRange(previous, 255f));
+            previous = value;
+        }
+
+        Assert.That(response[0][254], Is.EqualTo(response[0][252]), "Do not modify the solver's curve.");
+    }
+
+    [TestCase(1d)]
+    [TestCase(2.2d)]
+    [TestCase(2.4d)]
+    public void CameraResponseEncoder_NormalizedInput_MatchesKnownCameraGamma(double gamma)
+    {
+        var response = CreateGammaResponse(gamma);
+        for (var channel = 0; channel < 3; channel++)
+        {
+            // Normalized encoding must not depend on the arbitrary curve scale,
+            // even when exponentiating that scale would overflow.
+            for (var z = 0; z < 256; z++) response[channel][z] += (channel - 1) * 1000d;
+        }
+
+        foreach (var logExposure in new[] { -8d, 0d, 5d })
+        {
+            var encoder = new CameraResponseEncoder(response, logExposure);
+            for (var channel = 0; channel < 3; channel++)
+            {
+                foreach (var linear in new[] { 0.01f, 0.18f, 0.5f, 0.9f })
+                {
+                    // Between LUT entries, log-space interpolation approximates
+                    // the continuous curve to within half an output code level.
+                    Assert.That(encoder.EncodeNormalized(linear, channel),
+                        Is.EqualTo(Math.Pow(linear, 1d / gamma)).Within(0.5d / 255d));
+                }
+
+                for (var z = 2; z < 255; z++)
+                {
+                    var linear = (float)Math.Pow(z / 255d, gamma);
+                    Assert.That(encoder.EncodeNormalized(linear, channel),
+                        Is.EqualTo(z / 255d).Within(0.000001d));
+                }
+            }
+        }
+    }
+
+    [TestCase(0d)]
+    [TestCase(1e-8d)]
+    public void CameraResponseEncoder_NormalizedInput_FlatResponsePreservesInput(double responseRange)
+    {
+        var response = Enumerable.Range(0, 3).Select(channel =>
+            Enumerable.Range(0, 256).Select(z => channel + responseRange * z / 255d).ToArray()).ToArray();
+        var encoder = new CameraResponseEncoder(response, -8d);
+        for (var channel = 0; channel < 3; channel++)
+        {
+            foreach (var value in new[] { 0f, 0.01f, 0.18f, 0.5f, 1f })
+            {
+                Assert.That(encoder.EncodeNormalized(value, channel), Is.EqualTo(value));
+            }
+        }
+    }
+
+    [Test]
+    public void CameraResponseEncoder_NormalizedInput_HandlesBoundaries()
+    {
+        var encoder = new CameraResponseEncoder(CreateGammaResponse(2.2d), -8d);
+        foreach (var channel in Enumerable.Range(0, 3))
+        {
+            Assert.That(encoder.EncodeNormalized(0f, channel), Is.Zero);
+            Assert.That(encoder.EncodeNormalized(-0.1f, channel), Is.Zero);
+            Assert.That(encoder.EncodeNormalized(float.NegativeInfinity, channel), Is.Zero);
+            Assert.That(encoder.EncodeNormalized(1f, channel), Is.EqualTo(1f));
+            Assert.That(encoder.EncodeNormalized(1.1f, channel), Is.EqualTo(1f));
+            Assert.That(encoder.EncodeNormalized(float.PositiveInfinity, channel), Is.EqualTo(1f));
+            Assert.Throws<ArgumentOutOfRangeException>(() => encoder.EncodeNormalized(float.NaN, channel));
+        }
+    }
+
     [Test]
     public void Weight_TapersClippedValuesToZero()
     {

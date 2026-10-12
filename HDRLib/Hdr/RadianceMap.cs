@@ -20,6 +20,7 @@ internal class RadianceMap : IRadianceMap
     private int width;
     private float targetAverageBrightness = 1f;
     private readonly ToneMapperSettings? toneMapperSettings;
+    private CameraResponseEncoder? cameraEncoder;
 
 
     #endregion
@@ -75,6 +76,7 @@ internal class RadianceMap : IRadianceMap
     public unsafe void Fill(PixelInfo[] pixelInfo, double[][] response, float[,] motionMask, int width, int height)
     {
         this.Prepare(width, height);
+        this.cameraEncoder = new CameraResponseEncoder(response, pixelInfo[0].AvgLuminance);
         this.targetAverageBrightness = HdrBrightnessNormalizer.CalculateTargetAverageBrightness(pixelInfo, width, height);
         var imageSize = pixelInfo.Length;
         var logTimes = pixelInfo.Select(i => i.AvgLuminance).ToArray();
@@ -158,11 +160,11 @@ internal class RadianceMap : IRadianceMap
     {
         if (this.toneMapperSettings is null)
         {
-            var averageBrightness = HdrBrightnessNormalizer.CalculateAverageBrightness(this.Image.Pixels, this.Image.Pixels.Length);
-            var scale = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f);
             for (var i = 0; i < this.Image.Pixels.Length; i++)
             {
-                this.Image.Pixels[i] *= scale * 255f;
+                ref var pixel = ref this.Image.Pixels[i];
+                pixel.Update(this.cameraEncoder!.Encode(pixel.Red, 0),
+                    this.cameraEncoder.Encode(pixel.Green, 1), this.cameraEncoder.Encode(pixel.Blue, 2));
             }
 
             return;
@@ -176,7 +178,10 @@ internal class RadianceMap : IRadianceMap
 
         for (int i = 0; i < this.Image.Pixels.Length; i++)
         {
-            this.Image.Pixels[i] *= 255;
+            ref var pixel = ref this.Image.Pixels[i];
+            pixel.Update(this.cameraEncoder!.EncodeNormalized(pixel.Red, 0) * 255f,
+                this.cameraEncoder.EncodeNormalized(pixel.Green, 1) * 255f,
+                this.cameraEncoder.EncodeNormalized(pixel.Blue, 2) * 255f);
         }
 
     }

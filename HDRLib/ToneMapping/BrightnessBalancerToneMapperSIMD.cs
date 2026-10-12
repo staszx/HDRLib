@@ -33,7 +33,6 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
         var strength = Vector256.Create(Math.Clamp(this.settings.Strength, 0f, 1f));
         var lighting = Vector256.Create(MathF.Max(0f, this.settings.Lighting));
         var brightnessBoost = Vector256.Create(MathF.Max(0f, this.settings.BrightnessBoost) * MathF.Max(this.Settings.Brightness, 0f));
-        var hasBalanceControls = this.ForceToneMappingCore || HasActiveBalanceControls(this.settings);
         var blackClipValue = Math.Clamp(this.settings.BlackClip, 0f, 0.99f);
         var whiteClipValue = Math.Clamp(this.settings.WhiteClip, blackClipValue + 1e-3f, 4f);
         var blackClip = Vector256.Create(blackClipValue);
@@ -58,15 +57,14 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
 
             var workingLum = Avx.Multiply(sourceLum, sceneScale);
             var exposedLum = Avx.Multiply(workingLum, exposure);
-            var normalizedLum = Avx.Divide(exposedLum, Avx.Add(ToneMapperSIMDHelper.One, exposedLum));
+            // Compress HDR radiance only; LDR controls must stay continuous around neutral.
+            var normalizedLum = this.ForceToneMappingCore ? Avx.Divide(exposedLum, Avx.Add(ToneMapperSIMDHelper.One, exposedLum)) : exposedLum;
             var litLum = Avx.Add(avg, Avx.Multiply(Avx.Subtract(normalizedLum, avg), lighting));
 
             var balancedLum = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(Avx.Subtract(litLum, blackClip), invClipRange));
             balancedLum = ToneMapperSIMDHelper.Clamp01(Avx.Add(Avx.Multiply(Avx.Subtract(balancedLum, half), contrast), half));
 
-            var clippedLum = hasBalanceControls
-                ? ToneMapperSIMDHelper.Clamp01(Avx.Multiply(balancedLum, brightnessBoost))
-                : ToneMapperSIMDHelper.Clamp01(Avx.Multiply(workingLum, brightnessBoost));
+            var clippedLum = ToneMapperSIMDHelper.Clamp01(Avx.Multiply(balancedLum, brightnessBoost));
 
             var mappedLum = Avx.Add(workingLum, Avx.Multiply(Avx.Subtract(clippedLum, workingLum), strength));
             var scale = Avx.Divide(mappedLum, sourceLum);
@@ -116,12 +114,5 @@ internal sealed class BrightnessBalancerToneMapperSIMD : ToneMapperSIMD
         }
 
         return MathF.Exp(sum / luminance.Length);
-    }
-
-    private static bool HasActiveBalanceControls(BrightnessBalancerToneMapperSettings settings)
-    {
-        return MathF.Abs(settings.Lighting - 1f) > Epsilon ||
-               MathF.Abs(settings.WhiteClip - ClippedToneMapperSettings.NeutralWhiteClip) > Epsilon ||
-               MathF.Abs(settings.BlackClip - ClippedToneMapperSettings.NeutralBlackClip) > Epsilon;
     }
 }

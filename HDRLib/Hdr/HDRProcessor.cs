@@ -124,7 +124,29 @@ namespace HDRLib.Hdr.Debevec
                 options.MotionFilterStrength);
             this.radianceMap.Fill(pixelsInfo, response, motionMask!, width, height);
             this.radianceMap.Normalize(options);
-            return this.radianceMap.ToImage<T>();
+            if (options.OutputLut is not null && options.OutputLutStrength > 0 && this.radianceMap is RadianceMapGpu gpuMap)
+            {
+                gpuMap.ApplyOutputLut(options.OutputLut, options.OutputLutStrength);
+                return this.radianceMap.ToImage<T>();
+            }
+
+            var result = this.radianceMap.ToImage<T>();
+            try
+            {
+                if (options.OutputLut is not null)
+                {
+                    if (SystemHelper.UseAvx)
+                        HDRLib.ColorGrading.CubeLutSIMD.ApplyInPlace(options.OutputLut, result, options.OutputLutStrength);
+                    else
+                        options.OutputLut.ApplyInPlace(result, options.OutputLutStrength);
+                }
+                return result;
+            }
+            catch
+            {
+                result.Dispose();
+                throw;
+            }
         }
 
         internal static float[,]? CreateMotionMask(

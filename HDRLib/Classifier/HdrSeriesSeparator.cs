@@ -2,6 +2,7 @@
 
 namespace HDRLib.Classifier;
 
+using System.Globalization;
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
 using ImageSharpImage = SixLabors.ImageSharp.Image;
@@ -13,7 +14,16 @@ public class HdrSeriesSeparator
     }
 
     public static SeparateImageResult SeparateHdrSeries(string inputFolder, IEnumerable<string> allowedExtensions)
+        => SeparateHdrSeries(inputFolder, allowedExtensions, TimeSpan.FromSeconds(1));
+
+    public static SeparateImageResult SeparateHdrSeries(
+        string inputFolder, IEnumerable<string> allowedExtensions, TimeSpan maxFrameInterval)
     {
+        if (maxFrameInterval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxFrameInterval));
+        }
+
         var files = System.IO.Directory.GetFiles(inputFolder, "*.*")
             .Where(f => allowedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
             .OrderBy(f => f)
@@ -77,7 +87,94 @@ public class HdrSeriesSeparator
         }
 
         MergeNamedNeutralSingles(result);
+        SplitByCaptureTime(result, maxFrameInterval);
         return result;
+    }
+
+    // Apply after all grouping/merging so named neutral frames cannot bypass the time limit.
+    private static void SplitByCaptureTime(SeparateImageResult result, TimeSpan maxFrameInterval)
+    {
+        var candidates = result.HdrSeries.ToArray();
+        result.HdrSeries.Clear();
+        foreach (var candidate in candidates)
+        {
+            var timed = new List<(string Path, DateTime Time)>();
+            foreach (var file in candidate)
+            {
+                if (TryGetCaptureTime(file, out var time))
+                {
+                    timed.Add((file, time));
+                }
+                else
+                {
+                    // File creation/modification time is not a reliable capture timestamp.
+                    result.SingleImages.Add(file);
+                }
+            }
+
+            var group = new List<string>();
+            DateTime? previous = null;
+            foreach (var frame in timed.OrderBy(frame => frame.Time))
+            {
+                if (previous.HasValue && frame.Time - previous.Value > maxFrameInterval)
+                {
+                    AddTimedGroup(result, group);
+                    group = [];
+                }
+
+                group.Add(frame.Path);
+                previous = frame.Time;
+            }
+
+            AddTimedGroup(result, group);
+        }
+    }
+
+    private static void AddTimedGroup(SeparateImageResult result, List<string> group)
+    {
+        var biases = new HashSet<double>();
+        foreach (var file in group)
+        {
+            if (TryGetExposureBias(file, out var bias))
+            {
+                biases.Add(bias);
+            }
+        }
+
+        if (group.Count >= 2 && biases.Count >= 2)
+        {
+            result.HdrSeries.Add(group);
+        }
+        else
+        {
+            result.SingleImages.AddRange(group);
+        }
+    }
+
+    private static bool TryGetCaptureTime(string file, out DateTime time)
+    {
+        time = default;
+        try
+        {
+            var exif = ImageMetadataReader.ReadMetadata(file).OfType<ExifSubIfdDirectory>().FirstOrDefault();
+            if (exif is null || !exif.TryGetDateTime(ExifDirectoryBase.TagDateTimeOriginal, out time))
+            {
+                return false;
+            }
+
+            var fraction = exif.GetString(ExifDirectoryBase.TagSubsecondTimeOriginal)?.Trim();
+            if (!string.IsNullOrEmpty(fraction) && fraction.All(char.IsAsciiDigit) &&
+                decimal.TryParse("0." + fraction, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var seconds))
+            {
+                time = time.AddTicks((long)(seconds * TimeSpan.TicksPerSecond));
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void MergeNamedNeutralSingles(SeparateImageResult result)

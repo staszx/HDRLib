@@ -6,6 +6,10 @@ using ToneMapping.Settings;
 
 public class HdrImageOptions
 {
+    /// <summary>Optional LUT applied to the output after tone mapping and camera-response encoding.</summary>
+    public HDRLib.ColorGrading.CubeLut? OutputLut { get; set; }
+    /// <summary>LUT blend amount in [0, 1].</summary>
+    public float OutputLutStrength { get; set; } = 1f;
     public int SmoothFactor { get; set; } = 500;
     public int SampleCount { get; set; } = 500;
     public int MotionFilterStrength { get; set; } = 50;

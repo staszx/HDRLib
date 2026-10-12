@@ -18,6 +18,8 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
 {
     private readonly GpuContext context;
     private readonly ToneMapperSettings? toneMapperSettings;
+    private CameraResponseEncoder? cameraEncoder;
+    private readonly CameraResponseEncoderGpu gpuEncoder;
     
     private ArrayView1D<Rgb, Stride1D.Dense> gpuPixels;
     private int width;
@@ -32,6 +34,7 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
     {
         this.context = context;
         this.toneMapperSettings = toneMapperSettings;
+        this.gpuEncoder = new CameraResponseEncoderGpu(context);
         fillKernel = context.Accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<byte>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<float>, ArrayView<Rgb>, int, int, int, int>(FillKernel);
         toneMapper = this.toneMapperSettings is null ? null : ToneMapperFactoryGpu.Create(this.context, this.toneMapperSettings);
     }
@@ -52,6 +55,7 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
     public unsafe void Fill(PixelInfo[] pixelInfo, double[][] response, float[,] motionMask,  int width, int height)
     {
         Prepare(width, height);
+        this.cameraEncoder = new CameraResponseEncoder(response, pixelInfo[0].AvgLuminance);
         this.targetAverageBrightness = HdrBrightnessNormalizer.CalculateTargetAverageBrightness(pixelInfo, width, height);
         int pixelCount = width * height;
         int frameSize = pixelCount * 3;
@@ -108,17 +112,13 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
     public void Normalize(HDRLib.HdrImageOptions options)
     {
         var accelerator = this.context.Accelerator;
-        if (this.toneMapperSettings is null)
+        if (this.toneMapperSettings is not null)
         {
-            var pixels = this.gpuPixels.GetAsArray1D();
-            var averageBrightness = HdrBrightnessNormalizer.CalculateAverageBrightness(pixels, pixels.Length);
-            var scale= this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f) * 255f;
-            this.context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(scale, scale, scale));
-            accelerator.Synchronize();
-            return;
+            this.toneMapper!.ApplyHdrInPlace(this.gpuPixels, this.width, this.height, this.targetAverageBrightness);
         }
-        this.toneMapper!.ApplyHdrInPlace(this.gpuPixels, this.width, this.height, this.targetAverageBrightness);
-        this.context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(255, 255, 255));
+
+        var normalized = this.toneMapperSettings is not null;
+        this.gpuEncoder.ApplyInPlace(this.gpuPixels, this.cameraEncoder!, normalized, normalized ? 255f : 1f);
         accelerator.Synchronize();
     }
 
@@ -244,6 +244,11 @@ internal class RadianceMapGpu : IRadianceMap, IDisposable
     }
 
 
+    internal void ApplyOutputLut(HDRLib.ColorGrading.CubeLut lut, float strength)
+    {
+        using var gpuLut = new HDRLib.ColorGrading.CubeLutGpu(this.context, lut);
+        gpuLut.ApplyInPlace(this.gpuPixels, strength, pixelScale: 255f, quantizeInput: true);
+    }
     public Rgb[] GetPixels()
     {
         throw new NotImplementedException();

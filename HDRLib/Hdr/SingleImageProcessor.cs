@@ -3,6 +3,7 @@
 namespace HDRLib.Hdr.Debevec;
 
 using Gpu;
+using HDRLib.ColorGrading;
 using HDRLib.Image;
 using HDRLib.Interfaces;
 using HDRLib.ToneMapping;
@@ -21,6 +22,9 @@ public sealed class SingleImageProcessor : IDisposable
     private MemoryBuffer1D<Rgb, Stride1D.Dense>? gpuPixels;
     private Rgb[] sourcePixels = Array.Empty<Rgb>();
     private Rgb[] pixels = Array.Empty<Rgb>();
+    private CubeLutGpu? gpuLut;
+    private CubeLut? uploadedLut;
+    private GpuContext? lutContext;
     private int width;
     private int height;
 
@@ -87,6 +91,30 @@ public sealed class SingleImageProcessor : IDisposable
         this.ProcessClassic(toneMapperSettings);
     }
 
+    /// <summary>Processes the source, then applies an optional .cube LUT to the floating-point output.
+    /// The immutable LUT may be reused across previews and batch images. Strength is in [0, 1].</summary>
+    public void ProcessWithLut(ToneMapperSettings settings, HDRLib.ColorGrading.CubeLut? lut,
+        float strength = 1f, GpuContext? context = null)
+    {
+        HDRLib.ColorGrading.CubeLut.ValidateStrength(strength);
+        var effectiveContext = context ?? this.gpuContext;
+        if (lut is not null && strength > 0 && effectiveContext is not null)
+        {
+            if (this.sourcePixels.Length == 0 && this.gpuSourcePixels is null)
+                throw new InvalidOperationException("Source image is not loaded.");
+            this.LastAutoAdjustSettings = null;
+            this.ProcessGpu(effectiveContext, settings, lut, strength);
+            return;
+        }
+
+        this.Process(settings, context);
+        if (lut is null || strength == 0) return;
+        if (SystemHelper.UseAvx)
+            CubeLutSIMD.ApplyInPlace(lut, this.pixels, strength, pixelScale: 255f);
+        else
+            lut.ApplyInPlace(this.pixels, strength, pixelScale: 255f);
+    }
+
     public void Process(ToneMapperSettings toneMapperSettings, IImageProxy source)
     {
         this.LoadSource(source);
@@ -97,6 +125,10 @@ public sealed class SingleImageProcessor : IDisposable
     {
         this.ReleaseGpuSource();
         this.gpuToneMappers.Clear();
+        this.gpuLut?.Dispose();
+        this.gpuLut = null;
+        this.uploadedLut = null;
+        this.lutContext = null;
     }
 
     public unsafe IImageProxy ToImage<T>() where T : IImageProxy
@@ -303,7 +335,7 @@ public sealed class SingleImageProcessor : IDisposable
         this.pixels = restored;
     }
 
-    private void ProcessGpu(GpuContext context, ToneMapperSettings toneMapperSettings)
+    private void ProcessGpu(GpuContext context, ToneMapperSettings toneMapperSettings, CubeLut? lut = null, float lutStrength = 1f)
     {
         var accelerator = context.Accelerator;
         var toneMapper = this.GetOrCreateGpuToneMapper(context, toneMapperSettings);
@@ -320,6 +352,21 @@ public sealed class SingleImageProcessor : IDisposable
         toneMapper.ApplyInPlace(this.gpuPixels.View, this.width, this.height);
         this.LastAutoAdjustSettings = toneMapper.LastAutoAdjustSettings;
         context.Processor.Multiply((int)this.gpuPixels.Length, this.gpuPixels, new Rgb(255, 255, 255));
+        if (lut is not null && lutStrength > 0)
+        {
+            if (!ReferenceEquals(this.uploadedLut, lut) || !ReferenceEquals(this.lutContext, context))
+            {
+                this.gpuLut?.Dispose();
+                this.gpuLut = null;
+                this.uploadedLut = null;
+                this.lutContext = null;
+                this.gpuLut = new CubeLutGpu(context, lut);
+                this.uploadedLut = lut;
+                this.lutContext = context;
+            }
+
+            this.gpuLut!.ApplyInPlace(this.gpuPixels.View, lutStrength, pixelScale: 255f);
+        }
         accelerator.Synchronize();
 
         var result = new Rgb[(int)this.gpuPixels.Length];

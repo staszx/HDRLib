@@ -47,7 +47,6 @@ internal sealed class BrightnessBalancerToneMapper : ToneMapper
         var strength = Math.Clamp(this.settings.Strength, 0f, 1f);
         var lighting = MathF.Max(0f, this.settings.Lighting);
         var brightnessBoost = MathF.Max(0f, this.settings.BrightnessBoost) * MathF.Max(effectiveSettings.Brightness, 0f);
-        var hasBalanceControls = this.ForceToneMappingCore || HasActiveBalanceControls(this.settings);
         var blackClip = Math.Clamp(this.settings.BlackClip, 0f, 0.99f);
         var whiteClip = Math.Clamp(this.settings.WhiteClip, blackClip + 1e-3f, 4f);
         var invClipRange = 1f / (whiteClip - blackClip);
@@ -61,15 +60,14 @@ internal sealed class BrightnessBalancerToneMapper : ToneMapper
             var sourceLum = MathF.Max(rgb.Light(), Epsilon);
             var workingLum = sourceLum * sceneScale;
             var exposedLum = workingLum * exposure;
-            var normalizedLum = exposedLum / (1f + exposedLum);
+            // Compress HDR radiance only; LDR controls must stay continuous around neutral.
+            var normalizedLum = this.ForceToneMappingCore ? exposedLum / (1f + exposedLum) : exposedLum;
             var litLum = scaledAvgLum + ((normalizedLum - scaledAvgLum) * lighting);
 
             var balancedLum = Math.Clamp((litLum - blackClip) * invClipRange, 0f, 1f);
             balancedLum = Math.Clamp(((balancedLum - 0.5f) * contrast) + 0.5f, 0f, 1f);
 
-            var clippedLum = hasBalanceControls
-                ? Math.Clamp(balancedLum * brightnessBoost, 0f, 1f)
-                : Math.Clamp(workingLum * brightnessBoost, 0f, 1f);
+            var clippedLum = Math.Clamp(balancedLum * brightnessBoost, 0f, 1f);
 
             var mappedLum = workingLum + ((clippedLum - workingLum) * strength);
             var scale = mappedLum / sourceLum;
@@ -87,13 +85,6 @@ internal sealed class BrightnessBalancerToneMapper : ToneMapper
         });
 
         ApplyGamma(pixels, count, effectiveSettings.Gamma);
-    }
-
-    private static bool HasActiveBalanceControls(BrightnessBalancerToneMapperSettings settings)
-    {
-        return MathF.Abs(settings.Lighting - 1f) > Epsilon ||
-               MathF.Abs(settings.WhiteClip - ClippedToneMapperSettings.NeutralWhiteClip) > Epsilon ||
-               MathF.Abs(settings.BlackClip - ClippedToneMapperSettings.NeutralBlackClip) > Epsilon;
     }
 
     private static unsafe void ApplyGamma(Rgb* pixels, long count, float gamma)

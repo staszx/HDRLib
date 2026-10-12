@@ -31,6 +31,7 @@ namespace HDRLib.Hdr
         private int length;
         private float targetAverageBrightness = 1f;
         private readonly ToneMapperSettings? toneMapperSettings;
+        private CameraResponseEncoderSIMD? cameraEncoder;
 
         #endregion
 
@@ -136,6 +137,8 @@ namespace HDRLib.Hdr
         {
             this.targetAverageBrightness = HdrBrightnessNormalizer.CalculateTargetAverageBrightness(pixelInfo, width, height);
             Prepare(width, height);
+            this.cameraEncoder = new CameraResponseEncoderSIMD(
+                new CameraResponseEncoder(response, pixelInfo[0].AvgLuminance), this.toneMapperSettings is not null);
             var vectorLength = Vector256<float>.Count;
             var vectorOne = Vector256.Create(1f);
             var vectorMotionThreshold = Vector256.Create(0.6f);
@@ -274,9 +277,13 @@ namespace HDRLib.Hdr
         {
             if (this.toneMapperSettings is null)
             {
-                var averageBrightness = this.CalculateAverageBrightness();
-                var scale = this.targetAverageBrightness / MathF.Max(averageBrightness, 1e-6f) * 255f;
-                this.Multiply(scale);
+                Parallel.For(0, Const.ChannelCount, channel =>
+                {
+                    for (var i = 0; i < this.Pixels[channel].Length; i++)
+                    {
+                        this.Pixels[channel][i] = this.cameraEncoder!.Encode(this.Pixels[channel][i], channel);
+                    }
+                });
                 return;
             }
 
@@ -289,12 +296,9 @@ namespace HDRLib.Hdr
 
             Parallel.For(0, Const.ChannelCount, ch =>
             {
-                fixed (Vector256<float>* pxls = this.Pixels[ch])
+                for (var i = 0; i < this.Pixels[ch].Length; i++)
                 {
-                    for (var i = 0; i < this.vectorLength; ++i)
-                    {
-                        pxls[i] *= 255f;
-                    }
+                    this.Pixels[ch][i] = this.cameraEncoder!.Encode(this.Pixels[ch][i], ch) * 255f;
                 }
             });
         }
